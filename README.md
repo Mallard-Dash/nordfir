@@ -35,6 +35,17 @@ validates and displays that snapshot.
 `economize-local` evaluates an `Economize` intent and records the resulting
 REST action through a non-destructive dry-run driver.
 
+The first writable development command is deliberately harder to invoke:
+
+```bash
+cargo run -- apply-rest-local ./nordfir-state --confirm-system-power-write
+```
+
+It requires an existing original-state snapshot, a non-blocked REST plan and
+write access to Linux cpufreq. It verifies every write and attempts rollback if
+a later change fails. Run it only on a host whose power policy you intend to
+change.
+
 ## Documentation
 
 - `docs/ARCHITECTURE.md` — subsystem boundaries and the one-engine model.

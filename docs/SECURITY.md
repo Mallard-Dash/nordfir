@@ -77,6 +77,18 @@ local state should be readable only by the service account. A future writable
 driver must additionally verify file ownership and freshness before applying or
 restoring settings.
 
+## Writable REST transition
+
+The Linux REST driver accepts only typed governor and maximum-frequency
+changes and resolves them to fixed cpufreq paths. The CLI requires an exact
+confirmation flag, but that flag is not an authentication factor. Operating
+system permissions remain the enforcement boundary.
+
+Every write must be preceded by an expected-state check and followed by a
+read-back verification. Partial failure triggers best-effort rollback, and a
+rollback failure must be surfaced to the caller. Production use additionally
+requires durable audit logging plus snapshot ownership and freshness checks.
+
 ## Network boundary
 
 Nordfir should be designed to operate entirely on a private network. Internet exposure must never be required for core functionality.

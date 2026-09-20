@@ -3,7 +3,7 @@ use std::{process::ExitCode, time::SystemTime};
 use nordfir::{
     authority::{AuthorityPolicy, AuthorizationDecision, PolicyAuthorityGate},
     core::{AvailabilityIntent, Intent, IntentTarget, NodeId},
-    drivers::{Driver, DryRunDriver},
+    drivers::{Driver, DryRunDriver, LinuxRestDriver},
     energy::{
         GenericEstimateProvider, LinearPowerModel, PowerProfile, PowerReader, RestChange,
         RestChangePlan, RestPlanStatus, RestPlanner,
@@ -36,7 +36,7 @@ fn run() -> Result<(), String> {
     if command == "plan-rest-local" {
         let capabilities = LinuxPowerProbe::default().probe();
         let plan = RestPlanner::default().plan(&capabilities, &PowerProfile::rest_default());
-        print_rest_plan(&plan);
+        print_rest_plan(&plan, false);
         return match plan.status {
             RestPlanStatus::Ready | RestPlanStatus::NoChanges => Ok(()),
             RestPlanStatus::Blocked => Err("REST plan is blocked".to_owned()),
@@ -62,6 +62,24 @@ fn run() -> Result<(), String> {
         let state = OriginalPowerStateStore::new(state_directory).load(&NodeId::new("local"))?;
         print_original_power_state(&state);
         println!("No system power settings were changed.");
+        return Ok(());
+    }
+
+    if command == "apply-rest-local" {
+        let state_directory = required_state_directory(&command)?;
+        require_write_confirmation(&command)?;
+        let node = NodeId::new("local");
+        let original = OriginalPowerStateStore::new(state_directory).load(&node)?;
+        let capabilities = LinuxPowerProbe::default().probe();
+        let plan = RestPlanner::default().plan(&capabilities, &PowerProfile::rest_default());
+        print_rest_plan(&plan, matches!(plan.status, RestPlanStatus::Ready));
+        let report = LinuxRestDriver::default().apply(&plan, &original)?;
+        println!("Applied changes: {}", report.applied.len());
+        if report.applied.is_empty() {
+            println!("REST constraints were already satisfied; no settings were changed.");
+        } else {
+            println!("REST settings were written and verified.");
+        }
         return Ok(());
     }
 
@@ -126,7 +144,17 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, apply-rest-local or economize-local"
+        )),
+    }
+}
+
+fn require_write_confirmation(command: &str) -> Result<(), String> {
+    const CONFIRMATION: &str = "--confirm-system-power-write";
+    match std::env::args().nth(3).as_deref() {
+        Some(CONFIRMATION) => Ok(()),
+        _ => Err(format!(
+            "{command} writes Linux power settings; rerun with <state-directory> {CONFIRMATION}"
         )),
     }
 }
@@ -148,7 +176,7 @@ fn print_original_power_state(state: &OriginalPowerState) {
     );
 }
 
-fn print_rest_plan(plan: &RestChangePlan) {
+fn print_rest_plan(plan: &RestChangePlan, apply: bool) {
     println!("Node: local");
     println!("Requested mode: Rest");
     println!("Plan status: {:?}", plan.status);
@@ -168,8 +196,10 @@ fn print_rest_plan(plan: &RestChangePlan) {
     for warning in &plan.warnings {
         println!("Warning: {warning}");
     }
-    println!("Apply: false");
-    println!("No system settings were changed.");
+    println!("Apply: {apply}");
+    if !apply {
+        println!("No system settings were changed.");
+    }
 }
 
 fn print_power_capabilities(capabilities: &nordfir::energy::PowerCapabilities) {

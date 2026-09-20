@@ -1,5 +1,6 @@
 pub mod dry_run;
 pub mod ipmi;
+pub mod linux_rest;
 pub mod local_power;
 pub mod ssh;
 pub mod wol;
@@ -13,3 +14,4 @@ pub trait Driver: Send + Sync {
 }
 
 pub use dry_run::DryRunDriver;
+pub use linux_rest::{LinuxRestDriver, RestApplyReport};
