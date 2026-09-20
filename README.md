@@ -13,7 +13,8 @@ Linux state -> Snapshot -> Power estimate -> Economize intent
             -> Safety -> Authority -> REST action -> Dry run
 ```
 
-Nordfir does **not** modify host power settings in this version.
+Nordfir modifies host power settings only through explicitly confirmed apply
+and restore commands. All other development commands remain read-only or dry-run.
 
 ## Development commands
 
@@ -39,12 +40,14 @@ The first writable development command is deliberately harder to invoke:
 
 ```bash
 cargo run -- apply-rest-local ./nordfir-state --confirm-system-power-write
+cargo run -- restore-active-local ./nordfir-state --confirm-system-power-write
 ```
 
 It requires an existing original-state snapshot, a non-blocked REST plan and
 write access to Linux cpufreq. It verifies every write and attempts rollback if
-a later change fails. Run it only on a host whose power policy you intend to
-change.
+a later change fails. `restore-active-local` validates the saved values against
+current hardware capabilities before restoring and verifying them. Run these
+commands only on a host whose power policy you intend to change.
 
 ## Documentation
 

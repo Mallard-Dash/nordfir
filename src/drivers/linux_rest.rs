@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    energy::{RestChange, RestChangePlan, RestPlanStatus},
+    energy::{PowerCapabilities, RestChange, RestChangePlan, RestPlanStatus},
     state::OriginalPowerState,
 };
 
@@ -14,6 +14,25 @@ const CPUFREQ_PATH: &str = "devices/system/cpu/cpu0/cpufreq";
 #[derive(Debug, Clone, PartialEq)]
 pub struct RestApplyReport {
     pub applied: Vec<RestChange>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoredSetting {
+    CpuMaximumFrequency,
+    CpuMinimumFrequency,
+    CpuGovernor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveRestoreReport {
+    pub restored: Vec<RestoredSetting>,
+}
+
+#[derive(Debug, Clone)]
+struct LivePowerState {
+    governor: String,
+    scaling_min_mhz: f32,
+    scaling_max_mhz: f32,
 }
 
 /// Applies only pre-planned, bounded cpufreq changes under an injectable sysfs root.
@@ -73,6 +92,146 @@ impl LinuxRestDriver {
         }
 
         Ok(RestApplyReport { applied })
+    }
+
+    pub fn restore_active(
+        &self,
+        original: &OriginalPowerState,
+        capabilities: &PowerCapabilities,
+    ) -> Result<ActiveRestoreReport, String> {
+        Self::validate_restore_target(original, capabilities)?;
+        let live = self.read_live_state()?;
+        let mut restored = Vec::new();
+
+        let steps = [
+            RestoredSetting::CpuMaximumFrequency,
+            RestoredSetting::CpuMinimumFrequency,
+            RestoredSetting::CpuGovernor,
+        ];
+        for setting in steps {
+            if Self::setting_matches(setting, original, &live) {
+                continue;
+            }
+            if let Err(error) = self.restore_setting(setting, original) {
+                let mut possibly_restored = restored.clone();
+                possibly_restored.push(setting);
+                let rollback = self.rollback_restore(&possibly_restored, &live);
+                return match rollback {
+                    Ok(()) => Err(format!(
+                        "ACTIVE restore failed and was rolled back: {error}"
+                    )),
+                    Err(rollback_error) => Err(format!(
+                        "ACTIVE restore failed: {error}; rollback also failed: {rollback_error}"
+                    )),
+                };
+            }
+            restored.push(setting);
+        }
+
+        Ok(ActiveRestoreReport { restored })
+    }
+
+    fn validate_restore_target(
+        original: &OriginalPowerState,
+        capabilities: &PowerCapabilities,
+    ) -> Result<(), String> {
+        if !capabilities.cpufreq_available {
+            return Err("cannot restore ACTIVE state without Linux cpufreq".to_owned());
+        }
+        if !capabilities
+            .available_governors
+            .iter()
+            .any(|governor| governor == &original.governor)
+        {
+            return Err("saved original governor is no longer available".to_owned());
+        }
+        let (Some(hardware_min), Some(hardware_max)) =
+            (capabilities.hardware_min_mhz, capabilities.hardware_max_mhz)
+        else {
+            return Err("cannot validate saved frequencies against hardware limits".to_owned());
+        };
+        if original.scaling_min_mhz < hardware_min
+            || original.scaling_max_mhz > hardware_max
+            || original.scaling_min_mhz > original.scaling_max_mhz
+        {
+            return Err("saved original frequencies are outside hardware limits".to_owned());
+        }
+        Ok(())
+    }
+
+    fn read_live_state(&self) -> Result<LivePowerState, String> {
+        Ok(LivePowerState {
+            governor: read_trimmed(&self.cpufreq_path("scaling_governor"))?,
+            scaling_min_mhz: read_frequency(&self.cpufreq_path("scaling_min_freq"))?,
+            scaling_max_mhz: read_frequency(&self.cpufreq_path("scaling_max_freq"))?,
+        })
+    }
+
+    fn setting_matches(
+        setting: RestoredSetting,
+        original: &OriginalPowerState,
+        live: &LivePowerState,
+    ) -> bool {
+        match setting {
+            RestoredSetting::CpuMaximumFrequency => {
+                approximately_equal(live.scaling_max_mhz, original.scaling_max_mhz)
+            }
+            RestoredSetting::CpuMinimumFrequency => {
+                approximately_equal(live.scaling_min_mhz, original.scaling_min_mhz)
+            }
+            RestoredSetting::CpuGovernor => live.governor == original.governor,
+        }
+    }
+
+    fn restore_setting(
+        &self,
+        setting: RestoredSetting,
+        original: &OriginalPowerState,
+    ) -> Result<(), String> {
+        match setting {
+            RestoredSetting::CpuMaximumFrequency => write_and_verify_frequency(
+                &self.cpufreq_path("scaling_max_freq"),
+                original.scaling_max_mhz,
+            ),
+            RestoredSetting::CpuMinimumFrequency => write_and_verify_frequency(
+                &self.cpufreq_path("scaling_min_freq"),
+                original.scaling_min_mhz,
+            ),
+            RestoredSetting::CpuGovernor => {
+                write_and_verify_text(&self.cpufreq_path("scaling_governor"), &original.governor)
+            }
+        }
+    }
+
+    fn rollback_restore(
+        &self,
+        restored: &[RestoredSetting],
+        live: &LivePowerState,
+    ) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for setting in restored.iter().rev() {
+            let result = match setting {
+                RestoredSetting::CpuMaximumFrequency => write_and_verify_frequency(
+                    &self.cpufreq_path("scaling_max_freq"),
+                    live.scaling_max_mhz,
+                ),
+                RestoredSetting::CpuMinimumFrequency => write_and_verify_frequency(
+                    &self.cpufreq_path("scaling_min_freq"),
+                    live.scaling_min_mhz,
+                ),
+                RestoredSetting::CpuGovernor => {
+                    write_and_verify_text(&self.cpufreq_path("scaling_governor"), &live.governor)
+                }
+            };
+            if let Err(error) = result {
+                errors.push(error);
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
     }
 
     fn validate_plan(plan: &RestChangePlan, original: &OriginalPowerState) -> Result<(), String> {
@@ -214,10 +373,7 @@ fn write_and_verify_text(path: &Path, value: &str) -> Result<(), String> {
 }
 
 fn verify_frequency(path: &Path, expected_mhz: f32) -> Result<(), String> {
-    let actual_khz = read_trimmed(path)?
-        .parse::<f32>()
-        .map_err(|error| format!("parse {}: {error}", path.display()))?;
-    let actual_mhz = actual_khz / 1000.0;
+    let actual_mhz = read_frequency(path)?;
     if !approximately_equal(actual_mhz, expected_mhz) {
         return Err(format!(
             "{} changed since planning: expected {expected_mhz:.0} MHz, found {actual_mhz:.0} MHz",
@@ -225,6 +381,13 @@ fn verify_frequency(path: &Path, expected_mhz: f32) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn read_frequency(path: &Path) -> Result<f32, String> {
+    let actual_khz = read_trimmed(path)?
+        .parse::<f32>()
+        .map_err(|error| format!("parse {}: {error}", path.display()))?;
+    Ok(actual_khz / 1000.0)
 }
 
 fn write_and_verify_frequency(path: &Path, value_mhz: f32) -> Result<(), String> {
@@ -267,6 +430,8 @@ mod tests {
         fs::write(cpufreq.join("scaling_governor"), "performance")
             .expect("governor fixture should be written");
         fs::write(cpufreq.join("scaling_max_freq"), "4700000")
+            .expect("frequency fixture should be written");
+        fs::write(cpufreq.join("scaling_min_freq"), "400000")
             .expect("frequency fixture should be written");
         (root, cpufreq)
     }
@@ -396,5 +561,63 @@ mod tests {
                 .is_err()
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restores_original_active_settings_in_safe_order() {
+        let (root, cpufreq) = fixture();
+        fs::write(cpufreq.join("scaling_governor"), "powersave").unwrap();
+        fs::write(cpufreq.join("scaling_max_freq"), "1880000").unwrap();
+
+        let report = LinuxRestDriver::new(&root)
+            .restore_active(&original(), &capabilities())
+            .expect("original settings should restore");
+
+        assert_eq!(
+            report.restored,
+            vec![
+                RestoredSetting::CpuMaximumFrequency,
+                RestoredSetting::CpuGovernor
+            ]
+        );
+        assert_eq!(
+            fs::read_to_string(cpufreq.join("scaling_max_freq")).unwrap(),
+            "4700000"
+        );
+        assert_eq!(
+            fs::read_to_string(cpufreq.join("scaling_governor")).unwrap(),
+            "performance"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_rejects_original_values_outside_hardware_limits() {
+        let (root, cpufreq) = fixture();
+        let mut invalid = original();
+        invalid.scaling_max_mhz = 5000.0;
+
+        let result = LinuxRestDriver::new(&root).restore_active(&invalid, &capabilities());
+
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read_to_string(cpufreq.join("scaling_max_freq")).unwrap(),
+            "4700000"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn capabilities() -> PowerCapabilities {
+        PowerCapabilities {
+            cpufreq_available: true,
+            current_governor: Some("powersave".to_owned()),
+            available_governors: vec!["performance".to_owned(), "powersave".to_owned()],
+            hardware_min_mhz: Some(400.0),
+            hardware_max_mhz: Some(4700.0),
+            scaling_min_mhz: Some(400.0),
+            scaling_max_mhz: Some(1880.0),
+            rapl_available: false,
+            control_writable: true,
+        }
     }
 }

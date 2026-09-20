@@ -89,6 +89,11 @@ read-back verification. Partial failure triggers best-effort rollback, and a
 rollback failure must be surfaced to the caller. Production use additionally
 requires durable audit logging plus snapshot ownership and freshness checks.
 
+ACTIVE restoration validates saved values against current hardware
+capabilities and captures the live state before writing. A partial restoration
+attempts to roll back to that captured live state rather than assuming the host
+was still in the default REST profile.
+
 ## Network boundary
 
 Nordfir should be designed to operate entirely on a private network. Internet exposure must never be required for core functionality.

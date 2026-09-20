@@ -168,3 +168,15 @@ The CLI exposes this only through `apply-rest-local` with the exact
 `--confirm-system-power-write` flag. Restoration to `ACTIVE`, snapshot
 ownership/freshness checks and durable audit records remain required before a
 production deployment.
+
+## v0.5.4 ACTIVE restoration
+
+`restore-active-local` restores the saved maximum frequency, minimum frequency
+and governor through the same fixed cpufreq paths. Before writing, Nordfir
+checks that cpufreq is still available, the saved governor is supported and the
+saved frequencies remain inside the hardware-reported range.
+
+The driver reads the complete live state before changing anything. It restores
+the maximum before the minimum and governor, skips values that already match,
+and verifies every write. If restoration fails partway through, it attempts to
+return all touched settings to the live values observed at the start.
