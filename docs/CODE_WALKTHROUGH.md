@@ -1,0 +1,184 @@
+# Nordfir v0.4 Code Walkthrough
+
+This document describes what the current code does. It is intentionally more
+implementation-focused than `ARCHITECTURE.md`.
+
+## Scope of v0.4
+
+v0.4 proves the first low-risk vertical path without granting Nordfir the
+ability to modify host power settings.
+
+```text
+Linux host
+  -> read-only state collection
+  -> NodeSnapshot
+  -> whole-system power estimate
+  -> Economize intent
+  -> REST safety guard
+  -> authority check
+  -> typed REST action
+  -> dry-run driver
+```
+
+No code in this version writes CPU frequency limits, invokes shutdown, sends
+IPMI commands, or starts/stops services.
+
+## `src/state/linux.rs`
+
+`LinuxStateCollector` reads Linux kernel interfaces directly instead of running
+shell commands.
+
+Current observations:
+
+- CPU utilization from two `/proc/stat` samples.
+- Memory utilization from `/proc/meminfo`.
+- One-minute load average from `/proc/loadavg`.
+- Uptime from `/proc/uptime`.
+- CPU frequency from cpufreq sysfs when available.
+
+Missing information is represented as unavailable/unknown rather than guessed.
+The collector currently marks SSH session state as unknown because session
+inspection has not been implemented yet.
+
+## `src/core/snapshot.rs`
+
+`NodeSnapshot` is the normalized state passed into the decision engine. It now
+contains:
+
+- reachability and current power mode;
+- protected services and their activity observations;
+- CPU, memory, load, uptime and frequency observations;
+- an optional `PowerReading`.
+
+`protected_services` is separate from observed services. This prevents an empty
+service map from being interpreted as proof that no protected service exists.
+
+## `src/energy/measurement.rs`
+
+A `PowerReading` does not contain only watts. It also records:
+
+- source kind;
+- measurement scope;
+- confidence;
+- observation time;
+- optional uncertainty;
+- provider identity.
+
+This allows Nordfir to clearly distinguish a smart plug measurement from a
+whole-system sensor, component-only reading, calibrated estimate, or generic
+estimate.
+
+## `src/energy/provider.rs`
+
+`PowerProvider` is a read-only interface. `PowerReader` tries configured
+providers in explicit priority order and uses the first successful reading.
+
+Recommended order:
+
+1. external whole-system meter;
+2. whole-system hardware/BMC sensor;
+3. calibrated estimate;
+4. generic estimate.
+
+Component-only readings should normally be retained for diagnostics or used as
+model inputs rather than presented as total host consumption.
+
+## `src/energy/generic.rs`
+
+`GenericEstimateProvider` is a deterministic fallback. It uses CPU and memory
+utilization plus a configured `LinearPowerModel`.
+
+The estimate deliberately has low confidence. Disk and network contributions
+are currently zero because v0.4 does not collect those observations yet.
+
+This provider exists so Nordfir remains useful without a smart plug. It is not
+intended to pretend that modeled watts are directly measured watts.
+
+## `src/energy/hwmon.rs`
+
+`HwmonPowerProvider` reads a specifically configured Linux `power*_input`
+interface. The caller must declare whether that sensor represents the whole
+system or only a component. Nordfir does not guess sensor scope from an
+arbitrary hwmon filename.
+
+## `src/guards/rest_activity.rs`
+
+`RestActivityGuard` protects workloads when Nordfir considers entering REST.
+
+Rules:
+
+- active protected service -> `DEFER`;
+- expected service without an observation -> `BLOCK`;
+- unknown/unavailable activity -> `BLOCK`;
+- all protected services idle -> `ALLOW`.
+
+REST is therefore not automatically treated as harmless merely because it is
+less disruptive than shutdown.
+
+## `src/authority/policy.rs`
+
+`PolicyAuthorityGate` provides the first concrete authority implementation.
+
+`AuthorityPolicy::optimization_only()` grants only:
+
+- `Observe`;
+- `OptimizePower`.
+
+It does not grant shutdown, reboot, guard override, service control, or policy
+administration. Future master-secret, TOTP and hardware-key verification will
+sit behind the same `AuthorityGate` interface rather than changing engine
+logic.
+
+## `src/drivers/dry_run.rs`
+
+`DryRunDriver` accepts typed Nordfir actions and records them in memory. It never
+changes the host.
+
+This is intentional: the current milestone is to prove observation, safety,
+authority, and action selection before implementing a privileged Linux REST
+driver.
+
+## `src/main.rs`
+
+The binary currently exposes two development commands:
+
+```text
+nordfir inspect-local
+nordfir economize-local
+```
+
+`inspect-local` reads and prints a local Linux snapshot plus a generic power
+estimate.
+
+`economize-local` creates `Intent::Economize`, evaluates guards and authority,
+and sends an allowed REST action to `DryRunDriver`. The command explicitly
+prints that no system settings were changed.
+
+These commands are development probes, not the final Nordfir CLI contract.
+
+## Deliberately not implemented yet
+
+The following items are intentionally deferred:
+
+- writing CPU power limits or governors;
+- shutdown/reboot;
+- IPMI/WOL execution;
+- SSH session detection;
+- service activity providers such as Jellyfin;
+- external meter integrations;
+- calibration training from meter history;
+- persistent audit storage;
+- scheduling and demand prediction;
+- master-secret/2FA/hardware-key verification.
+
+The next safe implementation step is a Linux REST driver with explicit,
+reversible settings and before/after verification. It should remain disabled by
+default until the read-only and dry-run paths are proven on real hardware.
+
+## Development-only generic power coefficients
+
+The coefficients currently constructed in `src/main.rs` are demonstration
+values only. They are not hardware defaults and must not be used for billing,
+capacity planning, or claims about real wall power. A later configuration and
+calibration layer will provide node-specific coefficients or replace the model
+with a higher-quality provider.

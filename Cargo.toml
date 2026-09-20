@@ -1,0 +1,16 @@
+[package]
+name = "nordfir"
+version = "0.4.0"
+edition = "2024"
+description = "Safety-aware lifecycle and energy control engine for small infrastructure"
+license = "MIT"
+
+[lib]
+name = "nordfir"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nordfir"
+path = "src/main.rs"
+
+[dependencies]
