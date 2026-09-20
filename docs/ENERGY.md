@@ -119,3 +119,23 @@ The write-permission observation does not grant authority and does not prove
 that the current process may change the file. It is capability evidence only.
 Missing or malformed kernel interfaces produce absent values rather than host
 changes or guessed defaults.
+
+## v0.5.1 REST change planning
+
+`RestPlanner` converts discovered capabilities and a `PowerProfile` into a
+typed `RestChangePlan`. The plan can contain governor and maximum-frequency
+changes, but it has no execution behavior.
+
+Planning fails closed when cpufreq, the current governor, the required
+`powersave` governor, or frequency-range evidence is missing. The default REST
+profile requests a maximum of 40 percent of the hardware maximum, clamped to
+the hardware-supported range. It never raises an existing, more restrictive
+frequency ceiling.
+
+Plan states are:
+
+- `Ready` — at least one bounded change is proposed;
+- `NoChanges` — the REST constraints are already satisfied;
+- `Blocked` — required evidence or support is missing.
+
+The CLI prints `Apply: false` and does not pass the plan to a driver.

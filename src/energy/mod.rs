@@ -7,6 +7,7 @@ pub mod measurement;
 pub mod model;
 pub mod profile;
 pub mod provider;
+pub mod rest_plan;
 
 pub use calibration::*;
 pub use capabilities::*;
@@ -17,3 +18,4 @@ pub use measurement::*;
 pub use model::*;
 pub use profile::*;
 pub use provider::*;
+pub use rest_plan::*;

@@ -4,7 +4,10 @@ use nordfir::{
     authority::{AuthorityPolicy, AuthorizationDecision, PolicyAuthorityGate},
     core::{AvailabilityIntent, Intent, IntentTarget, NodeId},
     drivers::{Driver, DryRunDriver},
-    energy::{GenericEstimateProvider, LinearPowerModel, PowerReader},
+    energy::{
+        GenericEstimateProvider, LinearPowerModel, PowerProfile, PowerReader, RestChange,
+        RestChangePlan, RestPlanStatus, RestPlanner,
+    },
     engine::Engine,
     guards::{RestActivityGuard, SshSessionGuard},
     state::{LinuxPowerProbe, LinuxStateCollector},
@@ -28,6 +31,16 @@ fn run() -> Result<(), String> {
     if command == "power-capabilities-local" {
         print_power_capabilities(&LinuxPowerProbe::default().probe());
         return Ok(());
+    }
+
+    if command == "plan-rest-local" {
+        let capabilities = LinuxPowerProbe::default().probe();
+        let plan = RestPlanner::default().plan(&capabilities, &PowerProfile::rest_default());
+        print_rest_plan(&plan);
+        return match plan.status {
+            RestPlanStatus::Ready | RestPlanStatus::NoChanges => Ok(()),
+            RestPlanStatus::Blocked => Err("REST plan is blocked".to_owned()),
+        };
     }
 
     let node = NodeId::new("local");
@@ -91,9 +104,33 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local, power-capabilities-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local or economize-local"
         )),
     }
+}
+
+fn print_rest_plan(plan: &RestChangePlan) {
+    println!("Node: local");
+    println!("Requested mode: Rest");
+    println!("Plan status: {:?}", plan.status);
+    for change in &plan.changes {
+        match change {
+            RestChange::CpuGovernor { current, target } => {
+                println!("CPU governor: {current} -> {target}");
+            }
+            RestChange::CpuMaxFrequencyMhz { current, target } => {
+                println!("CPU maximum: {current:.0} -> {target:.0} MHz");
+            }
+        }
+    }
+    for blocker in &plan.blockers {
+        println!("Blocker: {blocker}");
+    }
+    for warning in &plan.warnings {
+        println!("Warning: {warning}");
+    }
+    println!("Apply: false");
+    println!("No system settings were changed.");
 }
 
 fn print_power_capabilities(capabilities: &nordfir::energy::PowerCapabilities) {

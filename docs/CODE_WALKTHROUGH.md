@@ -32,6 +32,16 @@ checked-in fixtures instead of inspecting the machine running the test suite.
 The probe treats a missing cpufreq directory and malformed frequency files as
 unsupported or unknown state. These conditions do not crash the CLI.
 
+## `src/energy/rest_plan.rs`
+
+`RestPlanner` combines discovered Linux capabilities with a `PowerProfile`.
+It produces typed governor and frequency-ceiling changes, blockers and
+warnings. The result is descriptive only and cannot write to Linux.
+
+The planner requires the configured governor and enough frequency evidence to
+calculate a bounded ceiling. It will lower an overly high ceiling but never
+raise a ceiling that is already more restrictive.
+
 ## `src/state/linux.rs`
 
 `LinuxStateCollector` reads Linux kernel interfaces directly instead of running
@@ -154,6 +164,7 @@ The binary currently exposes two development commands:
 ```text
 nordfir inspect-local
 nordfir power-capabilities-local
+nordfir plan-rest-local
 nordfir economize-local
 ```
 
@@ -163,6 +174,10 @@ estimate.
 `power-capabilities-local` reports the local CPU governor, available governors,
 frequency ranges, RAPL presence and control-file permission bits. It explicitly
 states that no system settings were changed.
+
+`plan-rest-local` creates and prints a `RestChangePlan`. A blocked plan exits
+with failure so automation cannot mistake missing safety evidence for success.
+All plan output remains dry-run and ends with `Apply: false`.
 
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
