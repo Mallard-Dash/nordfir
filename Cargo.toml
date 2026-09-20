@@ -14,3 +14,4 @@ name = "nordfir"
 path = "src/main.rs"
 
 [dependencies]
+fmt = "0.1.0"
