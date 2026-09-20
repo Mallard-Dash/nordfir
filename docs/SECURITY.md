@@ -73,9 +73,10 @@ The following should eventually be append-only audit events:
 Original power settings must be captured before a writable REST transition.
 Nordfir must refuse to overwrite an existing recovery snapshot automatically
 and must verify its version, values and node identity before use. Newly created
-local state should be readable only by the service account. A future writable
-driver must additionally verify file ownership and freshness before applying or
-restoring settings.
+local state should be readable only by the service account. Writable loads
+reject symlinks, broad group/other permissions and ownership mismatches between
+the state file and directory. Apply requires recent state; restore permits old
+state so emergency recovery does not expire.
 
 ## Writable REST transition
 
@@ -87,12 +88,21 @@ system permissions remain the enforcement boundary.
 Every write must be preceded by an expected-state check and followed by a
 read-back verification. Partial failure triggers best-effort rollback, and a
 rollback failure must be surfaced to the caller. Production use additionally
-requires durable audit logging plus snapshot ownership and freshness checks.
+requires tamper-evident or externally forwarded audit records.
 
 ACTIVE restoration validates saved values against current hardware
 capabilities and captures the live state before writing. A partial restoration
 attempts to roll back to that captured live state rather than assuming the host
 was still in the default REST profile.
+
+## Local audit log
+
+Confirmed apply and restore operations append intent and outcome events to a
+private local audit file. Control characters in fields are escaped, and unsafe
+audit paths or permissions fail closed before a power write. OS append mode
+prevents accidental truncation but is not cryptographic tamper evidence. A
+future deployment should forward records to a separate trust boundary or add a
+verifiable hash chain.
 
 ## Network boundary
 

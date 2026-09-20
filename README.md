@@ -49,6 +49,11 @@ a later change fails. `restore-active-local` validates the saved values against
 current hardware capabilities before restoring and verifying them. Run these
 commands only on a host whose power policy you intend to change.
 
+Writable commands require private state-directory and snapshot permissions.
+REST apply additionally requires a snapshot captured within the last 15
+minutes. Every confirmed apply or restore attempt appends a result to
+`<state-directory>/audit.log`.
+
 ## Documentation
 
 - `docs/ARCHITECTURE.md` — subsystem boundaries and the one-engine model.

@@ -186,6 +186,13 @@ checks the saved governor and frequency range against current hardware
 capabilities, captures the live pre-restore state and uses that state for
 best-effort rollback if restoration fails partway through.
 
+## `src/audit/mod.rs`
+
+`FileAuditSink` appends newline-delimited events to a local audit file using
+OS append mode. Fields are escaped to prevent injected newlines or tabs from
+creating forged-looking records. Writable CLI commands fail closed if their
+initial audit event cannot be stored.
+
 ## `src/main.rs`
 
 The binary currently exposes these development commands:
@@ -224,6 +231,10 @@ permission to write the kernel interfaces.
 `restore-active-local` restores and verifies the original frequency range and
 governor. It uses the same explicit confirmation requirement.
 
+Apply requires a snapshot no older than 15 minutes. Restore accepts older
+snapshots so a long REST interval cannot make recovery impossible. Both paths
+enforce private Unix metadata and append their outcome to `audit.log`.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.
@@ -240,12 +251,11 @@ The following items are intentionally deferred:
 - service activity providers such as Jellyfin;
 - external meter integrations;
 - calibration training from meter history;
-- persistent audit storage;
 - scheduling and demand prediction;
 - master-secret/2FA/hardware-key verification.
 
-The next safe implementation step is durable audit logging plus snapshot
-ownership and freshness checks.
+The next safe implementation step is explicit recovery-state retirement after
+restore plus stronger audit tamper evidence or forwarding.
 
 ## Development-only generic power coefficients
 

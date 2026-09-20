@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -169,6 +169,72 @@ impl OriginalPowerStateStore {
         Ok(state)
     }
 
+    /// Loads recovery state for a writable operation after checking local file security.
+    pub fn load_for_write(&self, expected_node: &NodeId) -> Result<OriginalPowerState, String> {
+        let path = self.path_for(expected_node)?;
+        self.validate_secure_metadata(&path)?;
+        self.load(expected_node)
+    }
+
+    pub fn load_fresh_for_write(
+        &self,
+        expected_node: &NodeId,
+        now: SystemTime,
+        maximum_age: std::time::Duration,
+    ) -> Result<OriginalPowerState, String> {
+        let state = self.load_for_write(expected_node)?;
+        let now_seconds = now
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| "current time predates the Unix epoch".to_owned())?
+            .as_secs();
+        if state.captured_at_unix_seconds > now_seconds {
+            return Err("original-power-state timestamp is in the future".to_owned());
+        }
+        let age = now_seconds - state.captured_at_unix_seconds;
+        if age > maximum_age.as_secs() {
+            return Err(format!(
+                "original-power-state is too old for apply: {age} seconds"
+            ));
+        }
+        Ok(state)
+    }
+
+    #[cfg(unix)]
+    fn validate_secure_metadata(&self, path: &Path) -> Result<(), String> {
+        use std::os::unix::fs::MetadataExt;
+
+        let directory = fs::symlink_metadata(&self.root)
+            .map_err(|error| format!("inspect state directory {}: {error}", self.root.display()))?;
+        if !directory.file_type().is_dir() || directory.file_type().is_symlink() {
+            return Err("state directory must be a real directory".to_owned());
+        }
+        if directory.mode() & 0o077 != 0 {
+            return Err("state directory permissions must not grant group/other access".to_owned());
+        }
+        #[cfg(target_os = "linux")]
+        if directory.uid() != effective_uid()? {
+            return Err("state directory must be owned by the effective user".to_owned());
+        }
+
+        let file = fs::symlink_metadata(path)
+            .map_err(|error| format!("inspect state file {}: {error}", path.display()))?;
+        if !file.file_type().is_file() || file.file_type().is_symlink() {
+            return Err("original-power-state must be a regular file".to_owned());
+        }
+        if file.mode() & 0o077 != 0 {
+            return Err("original-power-state permissions must be 0600 or stricter".to_owned());
+        }
+        if file.uid() != directory.uid() {
+            return Err("state file and directory must have the same owner".to_owned());
+        }
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    fn validate_secure_metadata(&self, _path: &Path) -> Result<(), String> {
+        Err("writable power operations require Unix file security checks".to_owned())
+    }
+
     fn prepare_root(&self) -> Result<(), String> {
         let existed = self.root.exists();
         fs::create_dir_all(&self.root)
@@ -197,6 +263,22 @@ impl OriginalPowerStateStore {
         validate_token("node", &node.0)?;
         Ok(self.root.join(format!("{}.original-power-state", node.0)))
     }
+}
+
+#[cfg(target_os = "linux")]
+fn effective_uid() -> Result<u32, String> {
+    let status = fs::read_to_string("/proc/self/status")
+        .map_err(|error| format!("read effective user id: {error}"))?;
+    let uid_line = status
+        .lines()
+        .find(|line| line.starts_with("Uid:"))
+        .ok_or_else(|| "effective user id is unavailable".to_owned())?;
+    uid_line
+        .split_whitespace()
+        .nth(2)
+        .ok_or_else(|| "effective user id is malformed".to_owned())?
+        .parse::<u32>()
+        .map_err(|error| format!("parse effective user id: {error}"))
 }
 
 fn validate_token(label: &str, value: &str) -> Result<(), String> {
@@ -337,5 +419,77 @@ mod tests {
             "NORDFIR_ORIGINAL_POWER_STATE_V1\nversion=1\nnode=local\ncaptured_at_unix_seconds=1234\ngovernor=performance\nscaling_min_mhz=400\nscaling_max_mhz=4700\nunexpected=value\n"
         )
         .is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writable_load_rejects_insecure_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = temporary_directory("insecure-state");
+        let store = OriginalPowerStateStore::new(&directory);
+        let path = store.save(&state()).expect("state should save");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let result = store.load_for_write(&NodeId::new("local"));
+
+        assert!(result.is_err());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn fresh_writable_load_rejects_old_and_future_snapshots() {
+        let old_directory = temporary_directory("old-state");
+        let old_store = OriginalPowerStateStore::new(&old_directory);
+        old_store.save(&state()).unwrap();
+        let now = UNIX_EPOCH + Duration::from_secs(10_000);
+
+        assert!(
+            old_store
+                .load_fresh_for_write(&NodeId::new("local"), now, Duration::from_secs(900))
+                .is_err()
+        );
+
+        let future_directory = temporary_directory("future-state");
+        let future_store = OriginalPowerStateStore::new(&future_directory);
+        let future = OriginalPowerState::capture(
+            NodeId::new("local"),
+            &capabilities(),
+            UNIX_EPOCH + Duration::from_secs(20_000),
+        )
+        .unwrap();
+        future_store.save(&future).unwrap();
+
+        assert!(
+            future_store
+                .load_fresh_for_write(&NodeId::new("local"), now, Duration::from_secs(900))
+                .is_err()
+        );
+        fs::remove_dir_all(old_directory).unwrap();
+        fs::remove_dir_all(future_directory).unwrap();
+    }
+
+    #[test]
+    fn fresh_writable_load_accepts_recent_snapshot() {
+        let directory = temporary_directory("recent-state");
+        let store = OriginalPowerStateStore::new(&directory);
+        let recent = OriginalPowerState::capture(
+            NodeId::new("local"),
+            &capabilities(),
+            UNIX_EPOCH + Duration::from_secs(9_500),
+        )
+        .unwrap();
+        store.save(&recent).unwrap();
+
+        let loaded = store
+            .load_fresh_for_write(
+                &NodeId::new("local"),
+                UNIX_EPOCH + Duration::from_secs(10_000),
+                Duration::from_secs(900),
+            )
+            .expect("recent secure state should load");
+
+        assert_eq!(loaded, recent);
+        fs::remove_dir_all(directory).unwrap();
     }
 }

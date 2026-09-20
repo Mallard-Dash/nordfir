@@ -31,6 +31,9 @@ The current milestone is intentionally conservative.
 - Expected-state checks, read-after-write verification and best-effort rollback.
 - Explicit ACTIVE restoration of the saved frequency range and governor.
 - Hardware-bound validation and read-after-write verification during restore.
+- Secure metadata checks for writable snapshot loads on Unix.
+- Fifteen-minute snapshot freshness requirement for REST apply.
+- Append-mode local audit records for confirmed apply and restore attempts.
 
 ### Safe defaults
 
@@ -41,13 +44,16 @@ The current milestone is intentionally conservative.
 - Read-only and planning commands do not modify the host.
 - The only writable command requires the exact `--confirm-system-power-write`
   flag and an existing original-state snapshot.
+- Apply refuses stale, future-dated or broadly readable recovery state.
+- Restore permits older recovery state so recovery remains possible after a
+  long REST interval, but still enforces secure metadata.
 
 ### Next milestone
 
-Harden the reversible Linux REST lifecycle. Apply and ACTIVE restoration are
-available behind explicit opt-in, but durable audit is not yet exposed. The
-next work should:
+Harden the reversible Linux REST lifecycle for service deployment. Apply and
+ACTIVE restoration now produce durable local audit records. The next work
+should:
 
-1. verify snapshot ownership and freshness before writable operations;
-2. emit durable audit records for every attempted change;
+1. make recovery-state retirement/rotation explicit after successful restore;
+2. add tamper evidence or forward audit shipping;
 3. exercise apply and restore on explicitly selected test hardware.
