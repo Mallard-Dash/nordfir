@@ -1,4 +1,5 @@
 pub mod calibration;
+pub mod capabilities;
 pub mod estimate;
 pub mod generic;
 pub mod hwmon;
@@ -8,6 +9,7 @@ pub mod profile;
 pub mod provider;
 
 pub use calibration::*;
+pub use capabilities::*;
 pub use estimate::*;
 pub use generic::*;
 pub use hwmon::*;

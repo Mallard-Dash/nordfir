@@ -103,3 +103,19 @@ external whole-system meter
 
 Component-only sensors may be useful model inputs but must not silently be
 presented as whole-system wall power.
+
+## v0.5 Linux capability discovery
+
+`LinuxPowerProbe` performs read-only discovery under an injectable sysfs root.
+It reports:
+
+- whether the cpufreq interface exists;
+- the current and available CPU governors;
+- hardware and configured frequency ranges;
+- whether a RAPL powercap entry exists;
+- whether the governor control file exposes write permission bits.
+
+The write-permission observation does not grant authority and does not prove
+that the current process may change the file. It is capability evidence only.
+Missing or malformed kernel interfaces produce absent values rather than host
+changes or guessed defaults.

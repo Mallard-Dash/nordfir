@@ -1,10 +1,11 @@
-# Nordfir Engine Scaffold v0.4
+# Nordfir Engine v0.5
 
 Nordfir is a safety-aware lifecycle and energy control engine for small
 infrastructure. It is being built in Rust and intentionally has no integrated
 AI dependency.
 
-The v0.4 milestone implements the first read-only/dry-run vertical slice:
+The v0.5 milestone extends the first read-only/dry-run vertical slice with
+Linux power-capability discovery:
 
 ```text
 Linux state -> Snapshot -> Power estimate -> Economize intent
@@ -17,12 +18,14 @@ Nordfir does **not** modify host power settings in this version.
 
 ```bash
 cargo run -- inspect-local
+cargo run -- power-capabilities-local
 cargo run -- economize-local
 ```
 
-The first command reads local Linux state and prints a generic power estimate.
-The second evaluates an `Economize` intent and records the resulting REST action
-through a non-destructive dry-run driver.
+`inspect-local` reads local Linux state and prints a generic power estimate.
+`power-capabilities-local` inspects cpufreq and RAPL interfaces without writing
+to them. `economize-local` evaluates an `Economize` intent and records the
+resulting REST action through a non-destructive dry-run driver.
 
 ## Documentation
 

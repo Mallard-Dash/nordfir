@@ -1,6 +1,6 @@
 # Implementation Status
 
-## v0.4 milestone
+## v0.5 milestone
 
 The current milestone is intentionally conservative.
 
@@ -18,6 +18,9 @@ The current milestone is intentionally conservative.
 - Optimization-only authority preset.
 - Non-destructive dry-run driver.
 - Local inspect/economize development commands.
+- Read-only Linux cpufreq and RAPL capability discovery.
+- Injectable sysfs root with fixture-based capability tests.
+- Local `power-capabilities-local` development command.
 
 ### Safe defaults
 
@@ -25,14 +28,14 @@ The current milestone is intentionally conservative.
 - Active protected-service activity defers REST.
 - Optimization-only authority cannot shut down or reboot nodes.
 - No arbitrary shell command execution is present.
-- No code in v0.4 modifies the host.
+- No code in v0.5 writes to sysfs or modifies the host.
 
 ### Next milestone
 
 Implement a reversible Linux REST driver behind an explicit opt-in setting.
 The driver should:
 
-1. discover supported CPU power controls;
+1. turn discovered CPU power controls into an explicit change plan;
 2. record the original settings;
 3. apply a bounded REST profile;
 4. verify the applied state;

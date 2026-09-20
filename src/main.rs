@@ -7,7 +7,7 @@ use nordfir::{
     energy::{GenericEstimateProvider, LinearPowerModel, PowerReader},
     engine::Engine,
     guards::{RestActivityGuard, SshSessionGuard},
-    state::LinuxStateCollector,
+    state::{LinuxPowerProbe, LinuxStateCollector},
 };
 
 fn main() -> ExitCode {
@@ -24,6 +24,12 @@ fn run() -> Result<(), String> {
     let command = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "inspect-local".to_owned());
+
+    if command == "power-capabilities-local" {
+        print_power_capabilities(&LinuxPowerProbe::default().probe());
+        return Ok(());
+    }
+
     let node = NodeId::new("local");
     let collector = LinuxStateCollector::default();
     let mut snapshot = collector.collect(node.clone())?;
@@ -85,8 +91,67 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local or economize-local"
         )),
+    }
+}
+
+fn print_power_capabilities(capabilities: &nordfir::energy::PowerCapabilities) {
+    println!("Node: local");
+    println!(
+        "CPU frequency control: {}",
+        availability(capabilities.cpufreq_available)
+    );
+    println!(
+        "Current governor: {}",
+        capabilities
+            .current_governor
+            .as_deref()
+            .unwrap_or("Unavailable")
+    );
+    println!(
+        "Available governors: {}",
+        if capabilities.available_governors.is_empty() {
+            "Unavailable".to_owned()
+        } else {
+            capabilities.available_governors.join(", ")
+        }
+    );
+    println!(
+        "Hardware frequency range: {}",
+        frequency_range(capabilities.hardware_min_mhz, capabilities.hardware_max_mhz)
+    );
+    println!(
+        "Configured frequency range: {}",
+        frequency_range(capabilities.scaling_min_mhz, capabilities.scaling_max_mhz)
+    );
+    println!(
+        "RAPL energy counters: {}",
+        availability(capabilities.rapl_available)
+    );
+    println!(
+        "Governor control file writable: {}",
+        if capabilities.control_writable {
+            "Yes (process authorization not verified)"
+        } else {
+            "No"
+        }
+    );
+    println!("No system settings were changed.");
+}
+
+fn availability(available: bool) -> &'static str {
+    if available {
+        "Available"
+    } else {
+        "Unavailable"
+    }
+}
+
+fn frequency_range(minimum: Option<f32>, maximum: Option<f32>) -> String {
+    match (minimum, maximum) {
+        (Some(minimum), Some(maximum)) => format!("{minimum:.0}-{maximum:.0} MHz"),
+        _ => "Unavailable".to_owned(),
     }
 }
 

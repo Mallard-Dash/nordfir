@@ -1,9 +1,9 @@
-# Nordfir v0.4 Code Walkthrough
+# Nordfir v0.5 Code Walkthrough
 
 This document describes what the current code does. It is intentionally more
 implementation-focused than `ARCHITECTURE.md`.
 
-## Scope of v0.4
+## Scope of v0.5
 
 v0.4 proves the first low-risk vertical path without granting Nordfir the
 ability to modify host power settings.
@@ -22,6 +22,15 @@ Linux host
 
 No code in this version writes CPU frequency limits, invokes shutdown, sends
 IPMI commands, or starts/stops services.
+
+## `src/state/linux_power.rs`
+
+`LinuxPowerProbe` discovers cpufreq and RAPL capabilities without opening a
+sysfs file for writing. Its sysfs root is injectable, so unit tests use
+checked-in fixtures instead of inspecting the machine running the test suite.
+
+The probe treats a missing cpufreq directory and malformed frequency files as
+unsupported or unknown state. These conditions do not crash the CLI.
 
 ## `src/state/linux.rs`
 
@@ -144,11 +153,16 @@ The binary currently exposes two development commands:
 
 ```text
 nordfir inspect-local
+nordfir power-capabilities-local
 nordfir economize-local
 ```
 
 `inspect-local` reads and prints a local Linux snapshot plus a generic power
 estimate.
+
+`power-capabilities-local` reports the local CPU governor, available governors,
+frequency ranges, RAPL presence and control-file permission bits. It explicitly
+states that no system settings were changed.
 
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
