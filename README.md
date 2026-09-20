@@ -19,13 +19,15 @@ Nordfir does **not** modify host power settings in this version.
 ```bash
 cargo run -- inspect-local
 cargo run -- power-capabilities-local
+cargo run -- plan-rest-local
 cargo run -- economize-local
 ```
 
 `inspect-local` reads local Linux state and prints a generic power estimate.
 `power-capabilities-local` inspects cpufreq and RAPL interfaces without writing
-to them. `economize-local` evaluates an `Economize` intent and records the
-resulting REST action through a non-destructive dry-run driver.
+to them. `plan-rest-local` creates a typed, non-executable REST change plan.
+`economize-local` evaluates an `Economize` intent and records the resulting
+REST action through a non-destructive dry-run driver.
 
 ## Documentation
 

@@ -21,6 +21,9 @@ The current milestone is intentionally conservative.
 - Read-only Linux cpufreq and RAPL capability discovery.
 - Injectable sysfs root with fixture-based capability tests.
 - Local `power-capabilities-local` development command.
+- Deterministic, typed REST change planning.
+- Fail-closed planning when required cpufreq evidence is missing.
+- Local `plan-rest-local` development command with `Apply: false`.
 
 ### Safe defaults
 
@@ -35,10 +38,9 @@ The current milestone is intentionally conservative.
 Implement a reversible Linux REST driver behind an explicit opt-in setting.
 The driver should:
 
-1. turn discovered CPU power controls into an explicit change plan;
-2. record the original settings;
-3. apply a bounded REST profile;
-4. verify the applied state;
-5. restore the original state on `ACTIVE`;
-6. fail closed when a required interface is missing;
-7. emit audit records for every attempted change.
+1. record the original settings;
+2. apply a bounded REST profile behind explicit opt-in;
+3. verify the applied state;
+4. restore the original state on `ACTIVE`;
+5. fail closed when a required interface is missing;
+6. emit audit records for every attempted change.
