@@ -83,6 +83,23 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
 
+    if command == "restore-active-local" {
+        let state_directory = required_state_directory(&command)?;
+        require_write_confirmation(&command)?;
+        let node = NodeId::new("local");
+        let original = OriginalPowerStateStore::new(state_directory).load(&node)?;
+        let capabilities = LinuxPowerProbe::default().probe();
+        print_original_power_state(&original);
+        let report = LinuxRestDriver::default().restore_active(&original, &capabilities)?;
+        println!("Restored settings: {}", report.restored.len());
+        if report.restored.is_empty() {
+            println!("Original ACTIVE settings were already present; nothing was changed.");
+        } else {
+            println!("Original ACTIVE settings were restored and verified.");
+        }
+        return Ok(());
+    }
+
     let node = NodeId::new("local");
     let collector = LinuxStateCollector::default();
     let mut snapshot = collector.collect(node.clone())?;
@@ -144,7 +161,7 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, apply-rest-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, apply-rest-local, restore-active-local or economize-local"
         )),
     }
 }

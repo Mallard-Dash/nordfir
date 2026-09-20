@@ -29,6 +29,8 @@ The current milestone is intentionally conservative.
 - Local commands to save and validate/display an original-state snapshot.
 - Explicit opt-in Linux REST driver for governor and maximum-frequency writes.
 - Expected-state checks, read-after-write verification and best-effort rollback.
+- Explicit ACTIVE restoration of the saved frequency range and governor.
+- Hardware-bound validation and read-after-write verification during restore.
 
 ### Safe defaults
 
@@ -42,12 +44,10 @@ The current milestone is intentionally conservative.
 
 ### Next milestone
 
-Complete the reversible Linux REST lifecycle. Applying a bounded REST plan is
-now available behind explicit opt-in, but restoration and durable audit are not
-yet exposed. The next work should:
-The driver should:
+Harden the reversible Linux REST lifecycle. Apply and ACTIVE restoration are
+available behind explicit opt-in, but durable audit is not yet exposed. The
+next work should:
 
-1. restore the original state on `ACTIVE`;
-2. verify snapshot ownership and freshness before writable operations;
-3. emit durable audit records for every attempted change;
-4. exercise apply and restore on explicitly selected test hardware.
+1. verify snapshot ownership and freshness before writable operations;
+2. emit durable audit records for every attempted change;
+3. exercise apply and restore on explicitly selected test hardware.

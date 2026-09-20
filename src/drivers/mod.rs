@@ -14,4 +14,4 @@ pub trait Driver: Send + Sync {
 }
 
 pub use dry_run::DryRunDriver;
-pub use linux_rest::{LinuxRestDriver, RestApplyReport};
+pub use linux_rest::{ActiveRestoreReport, LinuxRestDriver, RestApplyReport, RestoredSetting};

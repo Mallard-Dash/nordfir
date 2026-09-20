@@ -181,6 +181,11 @@ Only fixed cpufreq files can be written. The driver checks expected current
 values, verifies values after writing and rolls completed changes back in
 reverse order if a later operation fails.
 
+The same driver restores `ACTIVE` settings from the validated snapshot. It
+checks the saved governor and frequency range against current hardware
+capabilities, captures the live pre-restore state and uses that state for
+best-effort rollback if restoration fails partway through.
+
 ## `src/main.rs`
 
 The binary currently exposes these development commands:
@@ -192,6 +197,7 @@ nordfir plan-rest-local
 nordfir save-original-state-local ./nordfir-state
 nordfir show-original-state-local ./nordfir-state
 nordfir apply-rest-local ./nordfir-state --confirm-system-power-write
+nordfir restore-active-local ./nordfir-state --confirm-system-power-write
 nordfir economize-local
 ```
 
@@ -215,6 +221,9 @@ no system power settings were changed.
 the exact confirmation flag, a valid saved snapshot, a non-blocked plan and OS
 permission to write the kernel interfaces.
 
+`restore-active-local` restores and verifies the original frequency range and
+governor. It uses the same explicit confirmation requirement.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.
@@ -225,7 +234,6 @@ These commands are development probes, not the final Nordfir CLI contract.
 
 The following items are intentionally deferred:
 
-- restoring CPU power limits or governors on `ACTIVE`;
 - shutdown/reboot;
 - IPMI/WOL execution;
 - SSH session detection;
@@ -236,8 +244,8 @@ The following items are intentionally deferred:
 - scheduling and demand prediction;
 - master-secret/2FA/hardware-key verification.
 
-The next safe implementation step is restoration from the saved original
-state, with durable audit records plus snapshot ownership and freshness checks.
+The next safe implementation step is durable audit logging plus snapshot
+ownership and freshness checks.
 
 ## Development-only generic power coefficients
 
