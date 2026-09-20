@@ -139,3 +139,15 @@ Plan states are:
 - `Blocked` — required evidence or support is missing.
 
 The CLI prints `Apply: false` and does not pass the plan to a driver.
+
+## v0.5.2 original-state persistence
+
+Before Nordfir gains a writable REST driver, it can capture the current CPU
+governor and configured minimum/maximum frequencies in a versioned local state
+file. Capture fails if any required value is unknown or invalid.
+
+The file store creates a per-node snapshot and refuses to overwrite it. On
+Unix, a newly created state directory uses mode `0700` and a new snapshot uses
+mode `0600`. Loading verifies the format, value bounds and expected node. This
+is recovery state only: v0.5.2 does not apply or restore it and does not modify
+sysfs.

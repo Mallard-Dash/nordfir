@@ -2,3 +2,6 @@
 .env
 *.log
 .github
+
+# Local Nordfir runtime state
+/nordfir-state/

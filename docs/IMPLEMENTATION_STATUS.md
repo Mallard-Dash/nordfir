@@ -24,6 +24,9 @@ The current milestone is intentionally conservative.
 - Deterministic, typed REST change planning.
 - Fail-closed planning when required cpufreq evidence is missing.
 - Local `plan-rest-local` development command with `Apply: false`.
+- Versioned original-power-state snapshot format with strict validation.
+- File-backed local snapshot storage that refuses to overwrite existing state.
+- Local commands to save and validate/display an original-state snapshot.
 
 ### Safe defaults
 
@@ -36,9 +39,11 @@ The current milestone is intentionally conservative.
 ### Next milestone
 
 Implement a reversible Linux REST driver behind an explicit opt-in setting.
+Original-state capture and persistence are now available, but no saved state is
+applied or restored yet. The driver should:
 The driver should:
 
-1. record the original settings;
+1. require and validate a saved original-state snapshot;
 2. apply a bounded REST profile behind explicit opt-in;
 3. verify the applied state;
 4. restore the original state on `ACTIVE`;

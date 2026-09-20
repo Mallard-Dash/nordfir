@@ -68,6 +68,15 @@ The following should eventually be append-only audit events:
 - policy changes
 - preflight failures
 
+## Recovery state
+
+Original power settings must be captured before a writable REST transition.
+Nordfir must refuse to overwrite an existing recovery snapshot automatically
+and must verify its version, values and node identity before use. Newly created
+local state should be readable only by the service account. A future writable
+driver must additionally verify file ownership and freshness before applying or
+restoring settings.
+
 ## Network boundary
 
 Nordfir should be designed to operate entirely on a private network. Internet exposure must never be required for core functionality.

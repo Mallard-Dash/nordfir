@@ -5,6 +5,8 @@
 
 mod linux;
 mod linux_power;
+mod original_power;
 
 pub use linux::*;
 pub use linux_power::*;
+pub use original_power::*;
