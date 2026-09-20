@@ -12,7 +12,9 @@ use super::{Guard, GuardOutcome, GuardSeverity, GuardVerdict};
 pub struct ActiveServiceGuard;
 
 impl Guard for ActiveServiceGuard {
-    fn name(&self) -> &'static str { "active-service" }
+    fn name(&self) -> &'static str {
+        "active-service"
+    }
 
     fn evaluate(&self, snapshot: &NodeSnapshot, action: &Action) -> GuardVerdict {
         if !matches!(&action.kind, ActionKind::ShutdownNode { .. }) {
@@ -22,16 +24,21 @@ impl Guard for ActiveServiceGuard {
         for expected in &snapshot.protected_services {
             let Some(observation) = snapshot.services.get(expected) else {
                 return GuardVerdict {
-                    guard: self.name(), severity: GuardSeverity::Hard,
+                    guard: self.name(),
+                    severity: GuardSeverity::Hard,
                     outcome: GuardOutcome::Block,
-                    reason: format!("Protected service {} has no activity observation", expected.0),
+                    reason: format!(
+                        "Protected service {} has no activity observation",
+                        expected.0
+                    ),
                 };
             };
 
             match &observation.value {
                 ObservationValue::Known(ServiceActivity::Active { reason }) => {
                     return GuardVerdict {
-                        guard: self.name(), severity: GuardSeverity::Hard,
+                        guard: self.name(),
+                        severity: GuardSeverity::Hard,
                         outcome: GuardOutcome::Block,
                         reason: format!("Protected service {} is active: {reason}", expected.0),
                     };
@@ -40,19 +47,31 @@ impl Guard for ActiveServiceGuard {
                 | ObservationValue::Unknown { reason }
                 | ObservationValue::Unavailable { reason } => {
                     return GuardVerdict {
-                        guard: self.name(), severity: GuardSeverity::Hard,
+                        guard: self.name(),
+                        severity: GuardSeverity::Hard,
                         outcome: GuardOutcome::Block,
-                        reason: format!("Protected service {} activity is not safely known: {reason}", expected.0),
+                        reason: format!(
+                            "Protected service {} activity is not safely known: {reason}",
+                            expected.0
+                        ),
                     };
                 }
                 ObservationValue::Known(ServiceActivity::Idle) => {}
             }
         }
 
-        allow(self.name(), "All protected services are known idle or no protected services are configured")
+        allow(
+            self.name(),
+            "All protected services are known idle or no protected services are configured",
+        )
     }
 }
 
 fn allow(name: &'static str, reason: impl Into<String>) -> GuardVerdict {
-    GuardVerdict { guard: name, severity: GuardSeverity::Hard, outcome: GuardOutcome::Allow, reason: reason.into() }
+    GuardVerdict {
+        guard: name,
+        severity: GuardSeverity::Hard,
+        outcome: GuardOutcome::Allow,
+        reason: reason.into(),
+    }
 }

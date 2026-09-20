@@ -10,6 +10,11 @@ pub struct PowerProfile {
 
 impl PowerProfile {
     pub fn rest_default() -> Self {
-        Self { mode: PowerMode::Rest, cpu_max_percent: Some(40), preserve_network: true, preserve_ssh: true }
+        Self {
+            mode: PowerMode::Rest,
+            cpu_max_percent: Some(40),
+            preserve_network: true,
+            preserve_ssh: true,
+        }
     }
 }

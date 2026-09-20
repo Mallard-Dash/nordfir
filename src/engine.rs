@@ -25,34 +25,63 @@ impl Engine {
     pub fn evaluate(&self, actor: &str, intent: &Intent, snapshot: &NodeSnapshot) -> Evaluation {
         let candidate = self.candidate_action(intent, snapshot);
         let Some(action) = candidate else {
-            return Evaluation { candidate: None, guards: Vec::new(), authorization: None };
+            return Evaluation {
+                candidate: None,
+                guards: Vec::new(),
+                authorization: None,
+            };
         };
 
-        let verdicts: Vec<_> = self.guards.iter().map(|guard| guard.evaluate(snapshot, &action)).collect();
-        if verdicts.iter().any(|v| matches!(v.outcome, GuardOutcome::Block | GuardOutcome::Defer)) {
-            return Evaluation { candidate: Some(action), guards: verdicts, authorization: None };
+        let verdicts: Vec<_> = self
+            .guards
+            .iter()
+            .map(|guard| guard.evaluate(snapshot, &action))
+            .collect();
+        if verdicts
+            .iter()
+            .any(|v| matches!(v.outcome, GuardOutcome::Block | GuardOutcome::Defer))
+        {
+            return Evaluation {
+                candidate: Some(action),
+                guards: verdicts,
+                authorization: None,
+            };
         }
 
         let capability = capability_for(&action);
         let request = AuthorizationRequest {
-            actor: actor.to_owned(), capability,
-            reason: action.reason.clone(), requested_factors: Vec::new(),
+            actor: actor.to_owned(),
+            capability,
+            reason: action.reason.clone(),
+            requested_factors: Vec::new(),
         };
         let authorization = Some(self.authority.authorize(&request));
 
-        Evaluation { candidate: Some(action), guards: verdicts, authorization }
+        Evaluation {
+            candidate: Some(action),
+            guards: verdicts,
+            authorization,
+        }
     }
 
     fn candidate_action(&self, intent: &Intent, snapshot: &NodeSnapshot) -> Option<Action> {
-        let IntentTarget::Node(node) = &intent.target else { return None; };
+        let IntentTarget::Node(node) = &intent.target else {
+            return None;
+        };
         match &intent.availability {
             AvailabilityIntent::Available => Some(Action {
-                kind: ActionKind::SetPowerMode { node: node.clone(), mode: PowerMode::Active },
+                kind: ActionKind::SetPowerMode {
+                    node: node.clone(),
+                    mode: PowerMode::Active,
+                },
                 risk: ActionRisk::Recoverable,
                 reason: intent.reason.clone(),
             }),
             AvailabilityIntent::Economize => Some(Action {
-                kind: ActionKind::SetPowerMode { node: node.clone(), mode: PowerMode::Rest },
+                kind: ActionKind::SetPowerMode {
+                    node: node.clone(),
+                    mode: PowerMode::Rest,
+                },
                 risk: ActionRisk::Recoverable,
                 reason: intent.reason.clone(),
             }),
@@ -74,7 +103,9 @@ fn capability_for(action: &Action) -> Capability {
         ActionKind::SetPowerMode { .. } => Capability::OptimizePower,
         ActionKind::WakeNode { .. } => Capability::OptimizePower,
         ActionKind::ShutdownNode { .. } => Capability::ShutdownNode,
-        ActionKind::StartService { .. } | ActionKind::StopService { .. } => Capability::ControlApprovedServices,
+        ActionKind::StartService { .. } | ActionKind::StopService { .. } => {
+            Capability::ControlApprovedServices
+        }
         ActionKind::Wait => Capability::Observe,
     }
 }

@@ -19,6 +19,10 @@ pub struct AuthorizationRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthorizationDecision {
     Allow,
-    Deny { reason: String },
-    Challenge { required_factors: Vec<AuthenticationFactor> },
+    Deny {
+        reason: String,
+    },
+    Challenge {
+        required_factors: Vec<AuthenticationFactor>,
+    },
 }

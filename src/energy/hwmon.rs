@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf, time::SystemTime};
 
-use crate::core::NodeSnapshot;
 use super::{Confidence, PowerProvider, PowerReadError, PowerReading, PowerScope, PowerSourceKind};
+use crate::core::NodeSnapshot;
 
 /// Reads a configured Linux hwmon `power*_input` file.
 ///
@@ -17,17 +17,35 @@ pub struct HwmonPowerProvider {
 }
 
 impl HwmonPowerProvider {
-    pub fn new(path: impl Into<PathBuf>, provider_name: impl Into<String>, source: PowerSourceKind, scope: PowerScope, confidence: Confidence) -> Self {
-        Self { path: path.into(), provider_name: provider_name.into(), source, scope, confidence }
+    pub fn new(
+        path: impl Into<PathBuf>,
+        provider_name: impl Into<String>,
+        source: PowerSourceKind,
+        scope: PowerScope,
+        confidence: Confidence,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            provider_name: provider_name.into(),
+            source,
+            scope,
+            confidence,
+        }
     }
 }
 
 impl PowerProvider for HwmonPowerProvider {
-    fn name(&self) -> &str { &self.provider_name }
+    fn name(&self) -> &str {
+        &self.provider_name
+    }
 
     fn read_power(&self, _snapshot: &NodeSnapshot) -> Result<PowerReading, PowerReadError> {
-        let raw = fs::read_to_string(&self.path).map_err(|e| PowerReadError::Unavailable(format!("{}: {e}", self.path.display())))?;
-        let microwatts = raw.trim().parse::<f32>().map_err(|e| PowerReadError::Failed(format!("parse {}: {e}", self.path.display())))?;
+        let raw = fs::read_to_string(&self.path)
+            .map_err(|e| PowerReadError::Unavailable(format!("{}: {e}", self.path.display())))?;
+        let microwatts = raw
+            .trim()
+            .parse::<f32>()
+            .map_err(|e| PowerReadError::Failed(format!("parse {}: {e}", self.path.display())))?;
         Ok(PowerReading {
             watts: microwatts / 1_000_000.0,
             source: self.source,

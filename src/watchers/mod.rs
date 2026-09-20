@@ -1,7 +1,7 @@
 pub mod ping;
+pub mod power;
 pub mod service;
 pub mod ssh;
-pub mod power;
 
 use crate::core::{NodeId, NodeSnapshot};
 

@@ -20,19 +20,39 @@ impl<T> Observation<T> {
     }
 
     pub fn known_at(value: T, source: impl Into<String>, observed_at: SystemTime) -> Self {
-        Self { value: ObservationValue::Known(value), observed_at, source: source.into() }
+        Self {
+            value: ObservationValue::Known(value),
+            observed_at,
+            source: source.into(),
+        }
     }
 
     pub fn unknown(reason: impl Into<String>, source: impl Into<String>) -> Self {
         Self::unknown_at(reason, source, SystemTime::now())
     }
 
-    pub fn unknown_at(reason: impl Into<String>, source: impl Into<String>, observed_at: SystemTime) -> Self {
-        Self { value: ObservationValue::Unknown { reason: reason.into() }, observed_at, source: source.into() }
+    pub fn unknown_at(
+        reason: impl Into<String>,
+        source: impl Into<String>,
+        observed_at: SystemTime,
+    ) -> Self {
+        Self {
+            value: ObservationValue::Unknown {
+                reason: reason.into(),
+            },
+            observed_at,
+            source: source.into(),
+        }
     }
 
     pub fn unavailable(reason: impl Into<String>, source: impl Into<String>) -> Self {
-        Self { value: ObservationValue::Unavailable { reason: reason.into() }, observed_at: SystemTime::now(), source: source.into() }
+        Self {
+            value: ObservationValue::Unavailable {
+                reason: reason.into(),
+            },
+            observed_at: SystemTime::now(),
+            source: source.into(),
+        }
     }
 
     pub fn age(&self, now: SystemTime) -> Option<Duration> {

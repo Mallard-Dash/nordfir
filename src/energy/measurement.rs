@@ -19,7 +19,9 @@ pub enum PowerScope {
 pub struct Confidence(pub f32);
 
 impl Confidence {
-    pub fn new(value: f32) -> Self { Self(value.clamp(0.0, 1.0)) }
+    pub fn new(value: f32) -> Self {
+        Self(value.clamp(0.0, 1.0))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +36,10 @@ pub struct PowerReading {
 }
 
 impl PowerReading {
-    pub fn age(&self, now: SystemTime) -> Option<Duration> { now.duration_since(self.observed_at).ok() }
-    pub fn is_fresh(&self, now: SystemTime, max_age: Duration) -> bool { self.age(now).is_some_and(|age| age <= max_age) }
+    pub fn age(&self, now: SystemTime) -> Option<Duration> {
+        now.duration_since(self.observed_at).ok()
+    }
+    pub fn is_fresh(&self, now: SystemTime, max_age: Duration) -> bool {
+        self.age(now).is_some_and(|age| age <= max_age)
+    }
 }

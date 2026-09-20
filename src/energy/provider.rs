@@ -1,5 +1,5 @@
-use crate::core::NodeSnapshot;
 use super::PowerReading;
+use crate::core::NodeSnapshot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PowerReadError {
@@ -24,7 +24,9 @@ pub struct PowerReader {
 }
 
 impl PowerReader {
-    pub fn new(providers: Vec<Box<dyn PowerProvider>>) -> Self { Self { providers } }
+    pub fn new(providers: Vec<Box<dyn PowerProvider>>) -> Self {
+        Self { providers }
+    }
 
     pub fn read_best(&self, snapshot: &NodeSnapshot) -> Result<PowerReading, Vec<PowerReadError>> {
         let mut errors = Vec::new();

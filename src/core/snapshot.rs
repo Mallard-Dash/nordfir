@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::energy::PowerReading;
 use super::{NodeId, Observation, PowerMode, ServiceActivity, ServiceId};
+use crate::energy::PowerReading;
 
 #[derive(Debug, Clone)]
 pub struct NodeSnapshot {

@@ -1,7 +1,10 @@
 use std::time::SystemTime;
 
+use super::{
+    Confidence, LinearPowerModel, PowerProvider, PowerReadError, PowerReading, PowerScope,
+    PowerSourceKind, UtilizationSample,
+};
 use crate::core::{NodeSnapshot, ObservationValue};
-use super::{Confidence, LinearPowerModel, PowerProvider, PowerReadError, PowerReading, PowerScope, PowerSourceKind, UtilizationSample};
 
 /// Deterministic whole-system estimate for hosts without external metering.
 ///
@@ -12,16 +15,28 @@ pub struct GenericEstimateProvider {
 }
 
 impl GenericEstimateProvider {
-    pub fn new(model: LinearPowerModel) -> Self { Self { model } }
+    pub fn new(model: LinearPowerModel) -> Self {
+        Self { model }
+    }
 }
 
 impl PowerProvider for GenericEstimateProvider {
-    fn name(&self) -> &str { "nordfir-generic-estimate" }
+    fn name(&self) -> &str {
+        "nordfir-generic-estimate"
+    }
 
     fn read_power(&self, snapshot: &NodeSnapshot) -> Result<PowerReading, PowerReadError> {
-        let cpu = percent(snapshot.cpu_utilization_percent.as_ref()).ok_or_else(|| PowerReadError::Unavailable("CPU utilization unavailable".to_owned()))?;
-        let memory = percent(snapshot.memory_utilization_percent.as_ref()).ok_or_else(|| PowerReadError::Unavailable("memory utilization unavailable".to_owned()))?;
-        let watts = self.model.estimate_watts(UtilizationSample { cpu, memory, disk: 0.0, network: 0.0 });
+        let cpu = percent(snapshot.cpu_utilization_percent.as_ref())
+            .ok_or_else(|| PowerReadError::Unavailable("CPU utilization unavailable".to_owned()))?;
+        let memory = percent(snapshot.memory_utilization_percent.as_ref()).ok_or_else(|| {
+            PowerReadError::Unavailable("memory utilization unavailable".to_owned())
+        })?;
+        let watts = self.model.estimate_watts(UtilizationSample {
+            cpu,
+            memory,
+            disk: 0.0,
+            network: 0.0,
+        });
         Ok(PowerReading {
             watts,
             source: PowerSourceKind::GenericEstimate,

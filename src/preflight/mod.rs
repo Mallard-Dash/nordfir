@@ -1,4 +1,8 @@
-use crate::{action::Action, core::{NodeId, NodeSnapshot}, guards::GuardVerdict};
+use crate::{
+    action::Action,
+    core::{NodeId, NodeSnapshot},
+    guards::GuardVerdict,
+};
 
 #[derive(Debug, Clone)]
 pub struct PreflightReport {
