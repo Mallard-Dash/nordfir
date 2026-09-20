@@ -20,8 +20,9 @@ Linux host
   -> dry-run driver
 ```
 
-No code in this version writes CPU frequency limits, invokes shutdown, sends
-IPMI commands, or starts/stops services.
+Only the explicitly confirmed `apply-rest-local` command writes CPU governor
+and maximum-frequency settings. No code invokes shutdown, sends IPMI commands,
+or starts/stops services.
 
 ## `src/state/linux_power.rs`
 
@@ -169,6 +170,17 @@ This is intentional: the current milestone is to prove observation, safety,
 authority, and action selection before implementing a privileged Linux REST
 driver.
 
+## `src/drivers/linux_rest.rs`
+
+`LinuxRestDriver` is the first deliberately writable driver. It accepts a
+typed, ready REST plan plus the previously saved original state. Its sysfs root
+is injectable, allowing tests to exercise writes and rollback in temporary
+directories rather than modifying the test host.
+
+Only fixed cpufreq files can be written. The driver checks expected current
+values, verifies values after writing and rolls completed changes back in
+reverse order if a later operation fails.
+
 ## `src/main.rs`
 
 The binary currently exposes these development commands:
@@ -179,6 +191,7 @@ nordfir power-capabilities-local
 nordfir plan-rest-local
 nordfir save-original-state-local ./nordfir-state
 nordfir show-original-state-local ./nordfir-state
+nordfir apply-rest-local ./nordfir-state --confirm-system-power-write
 nordfir economize-local
 ```
 
@@ -198,6 +211,10 @@ non-overwriting, per-node recovery snapshot. `show-original-state-local`
 validates and displays the saved snapshot. Both commands explicitly state that
 no system power settings were changed.
 
+`apply-rest-local` is different: it performs real cpufreq writes. It requires
+the exact confirmation flag, a valid saved snapshot, a non-blocked plan and OS
+permission to write the kernel interfaces.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.
@@ -208,7 +225,7 @@ These commands are development probes, not the final Nordfir CLI contract.
 
 The following items are intentionally deferred:
 
-- writing CPU power limits or governors;
+- restoring CPU power limits or governors on `ACTIVE`;
 - shutdown/reboot;
 - IPMI/WOL execution;
 - SSH session detection;
@@ -219,10 +236,8 @@ The following items are intentionally deferred:
 - scheduling and demand prediction;
 - master-secret/2FA/hardware-key verification.
 
-The next safe implementation step is a Linux REST driver with explicit opt-in,
-bounded writes, before/after verification and restoration from the saved
-original state. It should remain disabled by default until the read-only and
-dry-run paths are proven on real hardware.
+The next safe implementation step is restoration from the saved original
+state, with durable audit records plus snapshot ownership and freshness checks.
 
 ## Development-only generic power coefficients
 

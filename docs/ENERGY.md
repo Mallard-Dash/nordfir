@@ -151,3 +151,20 @@ Unix, a newly created state directory uses mode `0700` and a new snapshot uses
 mode `0600`. Loading verifies the format, value bounds and expected node. This
 is recovery state only: v0.5.2 does not apply or restore it and does not modify
 sysfs.
+
+## v0.5.3 explicit REST apply
+
+`LinuxRestDriver` applies only typed changes from a ready `RestChangePlan` to
+the fixed Linux cpufreq governor and maximum-frequency interfaces. It does not
+accept shell commands or caller-controlled sysfs filenames.
+
+Before writing, the driver checks that the plan agrees with the saved original
+state. Each individual change checks the currently observed value, writes the
+target and reads it back for verification. If a later change fails, completed
+changes are rolled back in reverse order using the saved original state. A
+rollback failure is returned alongside the original error rather than hidden.
+
+The CLI exposes this only through `apply-rest-local` with the exact
+`--confirm-system-power-write` flag. Restoration to `ACTIVE`, snapshot
+ownership/freshness checks and durable audit records remain required before a
+production deployment.
