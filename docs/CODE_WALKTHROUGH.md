@@ -32,6 +32,18 @@ checked-in fixtures instead of inspecting the machine running the test suite.
 The probe treats a missing cpufreq directory and malformed frequency files as
 unsupported or unknown state. These conditions do not crash the CLI.
 
+## `src/state/original_power.rs`
+
+`OriginalPowerState` captures the governor and configured minimum/maximum CPU
+frequencies needed by a future restore operation. Its on-disk format is
+versioned and strictly validated. Invalid tokens, missing or extra fields,
+non-finite frequencies, reversed ranges and node mismatches are rejected.
+
+`OriginalPowerStateStore` creates one file per node and uses exclusive file
+creation, so capturing state twice cannot silently replace the recovery point.
+New Unix directories and files are restricted to the current user. No code in
+this module writes to sysfs or restores settings.
+
 ## `src/energy/rest_plan.rs`
 
 `RestPlanner` combines discovered Linux capabilities with a `PowerProfile`.
@@ -159,12 +171,14 @@ driver.
 
 ## `src/main.rs`
 
-The binary currently exposes two development commands:
+The binary currently exposes these development commands:
 
 ```text
 nordfir inspect-local
 nordfir power-capabilities-local
 nordfir plan-rest-local
+nordfir save-original-state-local ./nordfir-state
+nordfir show-original-state-local ./nordfir-state
 nordfir economize-local
 ```
 
@@ -178,6 +192,11 @@ states that no system settings were changed.
 `plan-rest-local` creates and prints a `RestChangePlan`. A blocked plan exits
 with failure so automation cannot mistake missing safety evidence for success.
 All plan output remains dry-run and ends with `Apply: false`.
+
+`save-original-state-local` captures required cpufreq values and creates a
+non-overwriting, per-node recovery snapshot. `show-original-state-local`
+validates and displays the saved snapshot. Both commands explicitly state that
+no system power settings were changed.
 
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
@@ -200,9 +219,10 @@ The following items are intentionally deferred:
 - scheduling and demand prediction;
 - master-secret/2FA/hardware-key verification.
 
-The next safe implementation step is a Linux REST driver with explicit,
-reversible settings and before/after verification. It should remain disabled by
-default until the read-only and dry-run paths are proven on real hardware.
+The next safe implementation step is a Linux REST driver with explicit opt-in,
+bounded writes, before/after verification and restoration from the saved
+original state. It should remain disabled by default until the read-only and
+dry-run paths are proven on real hardware.
 
 ## Development-only generic power coefficients
 

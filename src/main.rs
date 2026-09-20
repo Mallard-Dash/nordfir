@@ -1,4 +1,4 @@
-use std::process::ExitCode;
+use std::{process::ExitCode, time::SystemTime};
 
 use nordfir::{
     authority::{AuthorityPolicy, AuthorizationDecision, PolicyAuthorityGate},
@@ -10,7 +10,7 @@ use nordfir::{
     },
     engine::Engine,
     guards::{RestActivityGuard, SshSessionGuard},
-    state::{LinuxPowerProbe, LinuxStateCollector},
+    state::{LinuxPowerProbe, LinuxStateCollector, OriginalPowerState, OriginalPowerStateStore},
 };
 
 fn main() -> ExitCode {
@@ -41,6 +41,28 @@ fn run() -> Result<(), String> {
             RestPlanStatus::Ready | RestPlanStatus::NoChanges => Ok(()),
             RestPlanStatus::Blocked => Err("REST plan is blocked".to_owned()),
         };
+    }
+
+    if command == "save-original-state-local" {
+        let state_directory = required_state_directory(&command)?;
+        let state = OriginalPowerState::capture(
+            NodeId::new("local"),
+            &LinuxPowerProbe::default().probe(),
+            SystemTime::now(),
+        )?;
+        let path = OriginalPowerStateStore::new(state_directory).save(&state)?;
+        print_original_power_state(&state);
+        println!("Saved state: {}", path.display());
+        println!("No system power settings were changed.");
+        return Ok(());
+    }
+
+    if command == "show-original-state-local" {
+        let state_directory = required_state_directory(&command)?;
+        let state = OriginalPowerStateStore::new(state_directory).load(&NodeId::new("local"))?;
+        print_original_power_state(&state);
+        println!("No system power settings were changed.");
+        return Ok(());
     }
 
     let node = NodeId::new("local");
@@ -104,9 +126,26 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local or economize-local"
         )),
     }
+}
+
+fn required_state_directory(command: &str) -> Result<String, String> {
+    std::env::args()
+        .nth(2)
+        .ok_or_else(|| format!("{command} requires a <state-directory> argument"))
+}
+
+fn print_original_power_state(state: &OriginalPowerState) {
+    println!("Node: {}", state.node);
+    println!("State version: {}", state.version);
+    println!("Captured at Unix time: {}", state.captured_at_unix_seconds);
+    println!("Original governor: {}", state.governor);
+    println!(
+        "Original configured frequency range: {:.0}-{:.0} MHz",
+        state.scaling_min_mhz, state.scaling_max_mhz
+    );
 }
 
 fn print_rest_plan(plan: &RestChangePlan) {
