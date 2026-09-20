@@ -21,7 +21,9 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
-    let command = std::env::args().nth(1).unwrap_or_else(|| "inspect-local".to_owned());
+    let command = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "inspect-local".to_owned());
     let node = NodeId::new("local");
     let collector = LinuxStateCollector::default();
     let mut snapshot = collector.collect(node.clone())?;
@@ -60,33 +62,57 @@ fn run() -> Result<(), String> {
             let evaluation = engine.evaluate("local-user", &intent, &snapshot);
             println!("Intent: Economize");
             for verdict in &evaluation.guards {
-                println!("Guard {}: {:?} - {}", verdict.guard, verdict.outcome, verdict.reason);
+                println!(
+                    "Guard {}: {:?} - {}",
+                    verdict.guard, verdict.outcome, verdict.reason
+                );
             }
             match (&evaluation.candidate, &evaluation.authorization) {
                 (Some(action), Some(AuthorizationDecision::Allow)) => {
                     let driver = DryRunDriver::default();
                     driver.execute(action)?;
-                    println!("Dry-run action: {:?}", &action.kind);
+                    println!("Dry-run action: {:?}", action.kind);
                     println!("No system settings were changed.");
                     Ok(())
                 }
-                (_, Some(AuthorizationDecision::Deny { reason })) => Err(format!("authorization denied: {reason}")),
-                (_, Some(AuthorizationDecision::Challenge { .. })) => Err("step-up authentication is required".to_owned()),
+                (_, Some(AuthorizationDecision::Deny { reason })) => {
+                    Err(format!("authorization denied: {reason}"))
+                }
+                (_, Some(AuthorizationDecision::Challenge { .. })) => {
+                    Err("step-up authentication is required".to_owned())
+                }
                 _ => Err("no executable action was produced".to_owned()),
             }
         }
-        other => Err(format!("unknown command: {other}. Use inspect-local or economize-local")),
+        other => Err(format!(
+            "unknown command: {other}. Use inspect-local or economize-local"
+        )),
     }
 }
 
 fn print_snapshot(snapshot: &nordfir::core::NodeSnapshot) {
     println!("Node: {}", snapshot.node);
-    if let Some(cpu) = &snapshot.cpu_utilization_percent { println!("CPU: {:?}", &cpu.value); }
-    if let Some(memory) = &snapshot.memory_utilization_percent { println!("Memory: {:?}", &memory.value); }
-    if let Some(load) = &snapshot.load_average_1m { println!("Load 1m: {:?}", &load.value); }
-    if let Some(uptime) = &snapshot.uptime_seconds { println!("Uptime seconds: {:?}", &uptime.value); }
+    if let Some(cpu) = &snapshot.cpu_utilization_percent {
+        println!("CPU: {:?}", cpu.value);
+    }
+    if let Some(memory) = &snapshot.memory_utilization_percent {
+        println!("Memory: {:?}", memory.value);
+    }
+    if let Some(load) = &snapshot.load_average_1m {
+        println!("Load 1m: {:?}", load.value);
+    }
+    if let Some(uptime) = &snapshot.uptime_seconds {
+        println!("Uptime seconds: {:?}", uptime.value);
+    }
     if let Some(power) = &snapshot.power {
-        println!("Power: {:.1} W ({:?}, confidence {:.0}%)", power.watts, power.source, power.confidence.0 * 100.0);
-        if let Some(uncertainty) = power.uncertainty_watts { println!("Power uncertainty: ±{uncertainty:.1} W"); }
+        println!(
+            "Power: {:.1} W ({:?}, confidence {:.0}%)",
+            power.watts,
+            power.source,
+            power.confidence.0 * 100.0
+        );
+        if let Some(uncertainty) = power.uncertainty_watts {
+            println!("Power uncertainty: ±{uncertainty:.1} W");
+        }
     }
 }
