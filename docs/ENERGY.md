@@ -165,9 +165,8 @@ changes are rolled back in reverse order using the saved original state. A
 rollback failure is returned alongside the original error rather than hidden.
 
 The CLI exposes this only through `apply-rest-local` with the exact
-`--confirm-system-power-write` flag. Restoration to `ACTIVE`, snapshot
-ownership/freshness checks and durable audit records remain required before a
-production deployment.
+`--confirm-system-power-write` flag. Later v0.5 increments add ACTIVE
+restoration, snapshot hardening and local audit records.
 
 ## v0.5.4 ACTIVE restoration
 
@@ -180,3 +179,16 @@ The driver reads the complete live state before changing anything. It restores
 the maximum before the minimum and governor, skips values that already match,
 and verifies every write. If restoration fails partway through, it attempts to
 return all touched settings to the live values observed at the start.
+
+## v0.5.5 writable-state hardening
+
+REST apply loads recovery state through Unix metadata checks. The state
+directory must be a real directory without group/other access; the snapshot
+must be a regular, non-symlink file with mode `0600` or stricter and the same
+owner as its directory. Apply also rejects future timestamps and snapshots
+older than 15 minutes.
+
+ACTIVE restoration deliberately has no maximum snapshot age. Recovery must
+remain possible after a long REST interval, but restore enforces the same
+metadata checks. Confirmed apply and restore attempts append success or failure
+records to a mode-`0600` audit log inside the private state directory.

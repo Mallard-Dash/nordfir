@@ -1,6 +1,11 @@
-use std::{process::ExitCode, time::SystemTime};
+use std::{
+    path::Path,
+    process::ExitCode,
+    time::{Duration, SystemTime},
+};
 
 use nordfir::{
+    audit::{AuditEvent, AuditEventKind, AuditSink, FileAuditSink},
     authority::{AuthorityPolicy, AuthorizationDecision, PolicyAuthorityGate},
     core::{AvailabilityIntent, Intent, IntentTarget, NodeId},
     drivers::{Driver, DryRunDriver, LinuxRestDriver},
@@ -68,36 +73,57 @@ fn run() -> Result<(), String> {
     if command == "apply-rest-local" {
         let state_directory = required_state_directory(&command)?;
         require_write_confirmation(&command)?;
-        let node = NodeId::new("local");
-        let original = OriginalPowerStateStore::new(state_directory).load(&node)?;
-        let capabilities = LinuxPowerProbe::default().probe();
-        let plan = RestPlanner::default().plan(&capabilities, &PowerProfile::rest_default());
-        print_rest_plan(&plan, matches!(plan.status, RestPlanStatus::Ready));
-        let report = LinuxRestDriver::default().apply(&plan, &original)?;
-        println!("Applied changes: {}", report.applied.len());
-        if report.applied.is_empty() {
-            println!("REST constraints were already satisfied; no settings were changed.");
-        } else {
-            println!("REST settings were written and verified.");
-        }
-        return Ok(());
+        let audit = audit_sink(&state_directory);
+        record_audit(
+            &audit,
+            AuditEventKind::IntentReceived,
+            "REST apply requested",
+        )?;
+        let result =
+            (|| {
+                let node = NodeId::new("local");
+                let original = OriginalPowerStateStore::new(&state_directory)
+                    .load_fresh_for_write(&node, SystemTime::now(), Duration::from_secs(15 * 60))?;
+                let capabilities = LinuxPowerProbe::default().probe();
+                let plan =
+                    RestPlanner::default().plan(&capabilities, &PowerProfile::rest_default());
+                print_rest_plan(&plan, matches!(plan.status, RestPlanStatus::Ready));
+                let report = LinuxRestDriver::default().apply(&plan, &original)?;
+                println!("Applied changes: {}", report.applied.len());
+                if report.applied.is_empty() {
+                    println!("REST constraints were already satisfied; no settings were changed.");
+                } else {
+                    println!("REST settings were written and verified.");
+                }
+                Ok(())
+            })();
+        return finish_audited(&audit, "REST apply", result);
     }
 
     if command == "restore-active-local" {
         let state_directory = required_state_directory(&command)?;
         require_write_confirmation(&command)?;
-        let node = NodeId::new("local");
-        let original = OriginalPowerStateStore::new(state_directory).load(&node)?;
-        let capabilities = LinuxPowerProbe::default().probe();
-        print_original_power_state(&original);
-        let report = LinuxRestDriver::default().restore_active(&original, &capabilities)?;
-        println!("Restored settings: {}", report.restored.len());
-        if report.restored.is_empty() {
-            println!("Original ACTIVE settings were already present; nothing was changed.");
-        } else {
-            println!("Original ACTIVE settings were restored and verified.");
-        }
-        return Ok(());
+        let audit = audit_sink(&state_directory);
+        record_audit(
+            &audit,
+            AuditEventKind::IntentReceived,
+            "ACTIVE restore requested",
+        )?;
+        let result = (|| {
+            let node = NodeId::new("local");
+            let original = OriginalPowerStateStore::new(&state_directory).load_for_write(&node)?;
+            let capabilities = LinuxPowerProbe::default().probe();
+            print_original_power_state(&original);
+            let report = LinuxRestDriver::default().restore_active(&original, &capabilities)?;
+            println!("Restored settings: {}", report.restored.len());
+            if report.restored.is_empty() {
+                println!("Original ACTIVE settings were already present; nothing was changed.");
+            } else {
+                println!("Original ACTIVE settings were restored and verified.");
+            }
+            Ok(())
+        })();
+        return finish_audited(&audit, "ACTIVE restore", result);
     }
 
     let node = NodeId::new("local");
@@ -163,6 +189,49 @@ fn run() -> Result<(), String> {
         other => Err(format!(
             "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, apply-rest-local, restore-active-local or economize-local"
         )),
+    }
+}
+
+fn audit_sink(state_directory: &str) -> FileAuditSink {
+    FileAuditSink::new(Path::new(state_directory).join("audit.log"))
+}
+
+fn record_audit(audit: &FileAuditSink, kind: AuditEventKind, message: &str) -> Result<(), String> {
+    audit.record(AuditEvent {
+        at: SystemTime::now(),
+        actor: "local-user".to_owned(),
+        kind,
+        message: message.to_owned(),
+    })
+}
+
+fn finish_audited(
+    audit: &FileAuditSink,
+    operation: &str,
+    result: Result<(), String>,
+) -> Result<(), String> {
+    match result {
+        Ok(()) => {
+            record_audit(
+                audit,
+                AuditEventKind::ActionExecuted,
+                &format!("{operation} completed"),
+            )?;
+            Ok(())
+        }
+        Err(error) => {
+            let audit_result = record_audit(
+                audit,
+                AuditEventKind::ActionFailed,
+                &format!("{operation} failed: {error}"),
+            );
+            match audit_result {
+                Ok(()) => Err(error),
+                Err(audit_error) => Err(format!(
+                    "{error}; additionally failed to record audit event: {audit_error}"
+                )),
+            }
+        }
     }
 }
 
