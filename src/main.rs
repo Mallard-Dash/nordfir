@@ -104,7 +104,10 @@ fn print_power_capabilities(capabilities: &nordfir::energy::PowerCapabilities) {
     );
     println!(
         "Current governor: {}",
-        capabilities.current_governor.as_deref().unwrap_or("Unavailable")
+        capabilities
+            .current_governor
+            .as_deref()
+            .unwrap_or("Unavailable")
     );
     println!(
         "Available governors: {}",
@@ -116,17 +119,11 @@ fn print_power_capabilities(capabilities: &nordfir::energy::PowerCapabilities) {
     );
     println!(
         "Hardware frequency range: {}",
-        frequency_range(
-            capabilities.hardware_min_mhz,
-            capabilities.hardware_max_mhz
-        )
+        frequency_range(capabilities.hardware_min_mhz, capabilities.hardware_max_mhz)
     );
     println!(
         "Configured frequency range: {}",
-        frequency_range(
-            capabilities.scaling_min_mhz,
-            capabilities.scaling_max_mhz
-        )
+        frequency_range(capabilities.scaling_min_mhz, capabilities.scaling_max_mhz)
     );
     println!(
         "RAPL energy counters: {}",

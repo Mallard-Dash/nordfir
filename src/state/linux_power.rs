@@ -25,9 +25,7 @@ impl LinuxPowerProbe {
     }
 
     pub fn probe(&self) -> PowerCapabilities {
-        let cpufreq = self
-            .sysfs_root
-            .join("devices/system/cpu/cpu0/cpufreq");
+        let cpufreq = self.sysfs_root.join("devices/system/cpu/cpu0/cpufreq");
         let governor_path = cpufreq.join("scaling_governor");
 
         PowerCapabilities {
@@ -89,10 +87,7 @@ mod tests {
         let capabilities = LinuxPowerProbe::new(fixture("full")).probe();
 
         assert!(capabilities.cpufreq_available);
-        assert_eq!(
-            capabilities.current_governor.as_deref(),
-            Some("powersave")
-        );
+        assert_eq!(capabilities.current_governor.as_deref(), Some("powersave"));
         assert_eq!(
             capabilities.available_governors,
             vec!["performance", "powersave"]
