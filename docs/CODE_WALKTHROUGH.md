@@ -235,6 +235,11 @@ Apply requires a snapshot no older than 15 minutes. Restore accepts older
 snapshots so a long REST interval cannot make recovery impossible. Both paths
 enforce private Unix metadata and append their outcome to `audit.log`.
 
+After successful ACTIVE verification, restore archives the recovery snapshot
+under `archive/` and records `recovery_state_retired`. The archive operation
+refuses name collisions and preserves the audit log, allowing the next cycle to
+capture a new snapshot without deleting recovery history.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.
@@ -254,8 +259,8 @@ The following items are intentionally deferred:
 - scheduling and demand prediction;
 - master-secret/2FA/hardware-key verification.
 
-The next safe implementation step is explicit recovery-state retirement after
-restore plus stronger audit tamper evidence or forwarding.
+The next safe implementation step is stronger audit tamper evidence or
+forwarding, followed by a least-privilege long-running service model.
 
 ## Development-only generic power coefficients
 

@@ -199,22 +199,53 @@ impl OriginalPowerStateStore {
         Ok(state)
     }
 
+    /// Archives a verified recovery snapshot without overwriting prior history.
+    pub fn retire(&self, expected_node: &NodeId) -> Result<PathBuf, String> {
+        let state = self.load_for_write(expected_node)?;
+        let source = self.path_for(expected_node)?;
+        let archive = self.root.join("archive");
+        #[cfg(unix)]
+        let archive_existed = archive.exists();
+        fs::create_dir_all(&archive)
+            .map_err(|error| format!("create archive directory {}: {error}", archive.display()))?;
+        #[cfg(unix)]
+        if !archive_existed {
+            fs::set_permissions(&archive, fs::Permissions::from_mode(0o700)).map_err(|error| {
+                format!(
+                    "set permissions on archive directory {}: {error}",
+                    archive.display()
+                )
+            })?;
+        }
+        Self::validate_secure_directory(&archive)?;
+
+        let destination = archive.join(format!(
+            "{}.{}.original-power-state",
+            expected_node.0, state.captured_at_unix_seconds
+        ));
+        fs::hard_link(&source, &destination).map_err(|error| {
+            format!(
+                "archive {} as {} without overwrite: {error}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+        sync_directory(&archive)?;
+        if let Err(error) = fs::remove_file(&source) {
+            return Err(format!(
+                "snapshot was archived but active state could not be removed at {}: {error}",
+                source.display()
+            ));
+        }
+        sync_directory(&self.root)?;
+        Ok(destination)
+    }
+
     #[cfg(unix)]
     fn validate_secure_metadata(&self, path: &Path) -> Result<(), String> {
         use std::os::unix::fs::MetadataExt;
 
-        let directory = fs::symlink_metadata(&self.root)
-            .map_err(|error| format!("inspect state directory {}: {error}", self.root.display()))?;
-        if !directory.file_type().is_dir() || directory.file_type().is_symlink() {
-            return Err("state directory must be a real directory".to_owned());
-        }
-        if directory.mode() & 0o077 != 0 {
-            return Err("state directory permissions must not grant group/other access".to_owned());
-        }
-        #[cfg(target_os = "linux")]
-        if directory.uid() != effective_uid()? {
-            return Err("state directory must be owned by the effective user".to_owned());
-        }
+        let directory = Self::validate_secure_directory(&self.root)?;
 
         let file = fs::symlink_metadata(path)
             .map_err(|error| format!("inspect state file {}: {error}", path.display()))?;
@@ -230,8 +261,32 @@ impl OriginalPowerStateStore {
         Ok(())
     }
 
+    #[cfg(unix)]
+    fn validate_secure_directory(path: &Path) -> Result<fs::Metadata, String> {
+        use std::os::unix::fs::MetadataExt;
+
+        let directory = fs::symlink_metadata(path)
+            .map_err(|error| format!("inspect state directory {}: {error}", path.display()))?;
+        if !directory.file_type().is_dir() || directory.file_type().is_symlink() {
+            return Err("state directory must be a real directory".to_owned());
+        }
+        if directory.mode() & 0o077 != 0 {
+            return Err("state directory permissions must not grant group/other access".to_owned());
+        }
+        #[cfg(target_os = "linux")]
+        if directory.uid() != effective_uid()? {
+            return Err("state directory must be owned by the effective user".to_owned());
+        }
+        Ok(directory)
+    }
+
     #[cfg(not(unix))]
     fn validate_secure_metadata(&self, _path: &Path) -> Result<(), String> {
+        Err("writable power operations require Unix file security checks".to_owned())
+    }
+
+    #[cfg(not(unix))]
+    fn validate_secure_directory(_path: &Path) -> Result<fs::Metadata, String> {
         Err("writable power operations require Unix file security checks".to_owned())
     }
 
@@ -263,6 +318,12 @@ impl OriginalPowerStateStore {
         validate_token("node", &node.0)?;
         Ok(self.root.join(format!("{}.original-power-state", node.0)))
     }
+}
+
+fn sync_directory(path: &Path) -> Result<(), String> {
+    fs::File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("sync directory {}: {error}", path.display()))
 }
 
 #[cfg(target_os = "linux")]
@@ -490,6 +551,50 @@ mod tests {
             .expect("recent secure state should load");
 
         assert_eq!(loaded, recent);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn retirement_archives_snapshot_and_allows_a_new_cycle() {
+        let directory = temporary_directory("retire-state");
+        let store = OriginalPowerStateStore::new(&directory);
+        let expected = state();
+        let active_path = store.save(&expected).unwrap();
+
+        let archived = store.retire(&NodeId::new("local")).unwrap();
+
+        assert!(!active_path.exists());
+        assert!(archived.ends_with("local.1234.original-power-state"));
+        assert_eq!(
+            OriginalPowerState::decode(&fs::read_to_string(&archived).unwrap()).unwrap(),
+            expected
+        );
+        assert!(store.save(&state()).is_ok());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn retirement_never_overwrites_existing_archive() {
+        let directory = temporary_directory("retire-collision");
+        let store = OriginalPowerStateStore::new(&directory);
+        let expected = state();
+        let active_path = store.save(&expected).unwrap();
+        let archive = directory.join("archive");
+        fs::create_dir_all(&archive).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::set_permissions(&archive, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let archived = archive.join("local.1234.original-power-state");
+        fs::write(&archived, "existing history").unwrap();
+
+        let result = store.retire(&NodeId::new("local"));
+
+        assert!(result.is_err());
+        assert!(active_path.exists());
+        assert_eq!(fs::read_to_string(archived).unwrap(), "existing history");
         fs::remove_dir_all(directory).unwrap();
     }
 }

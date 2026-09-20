@@ -104,6 +104,14 @@ prevents accidental truncation but is not cryptographic tamper evidence. A
 future deployment should forward records to a separate trust boundary or add a
 verifiable hash chain.
 
+## Recovery-state retirement
+
+An active recovery snapshot is archived only after ACTIVE settings have been
+restored and verified. Retirement never overwrites an existing archive name.
+The archive directory remains private, and directory metadata is synchronized
+around the transition. Failure leaves recovery data available and is surfaced
+through both the command result and audit path.
+
 ## Network boundary
 
 Nordfir should be designed to operate entirely on a private network. Internet exposure must never be required for core functionality.

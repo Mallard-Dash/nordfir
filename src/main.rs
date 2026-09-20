@@ -111,7 +111,8 @@ fn run() -> Result<(), String> {
         )?;
         let result = (|| {
             let node = NodeId::new("local");
-            let original = OriginalPowerStateStore::new(&state_directory).load_for_write(&node)?;
+            let store = OriginalPowerStateStore::new(&state_directory);
+            let original = store.load_for_write(&node)?;
             let capabilities = LinuxPowerProbe::default().probe();
             print_original_power_state(&original);
             let report = LinuxRestDriver::default().restore_active(&original, &capabilities)?;
@@ -121,6 +122,13 @@ fn run() -> Result<(), String> {
             } else {
                 println!("Original ACTIVE settings were restored and verified.");
             }
+            let archived = store.retire(&node)?;
+            record_audit(
+                &audit,
+                AuditEventKind::RecoveryStateRetired,
+                &format!("recovery snapshot archived at {}", archived.display()),
+            )?;
+            println!("Archived recovery state: {}", archived.display());
             Ok(())
         })();
         return finish_audited(&audit, "ACTIVE restore", result);

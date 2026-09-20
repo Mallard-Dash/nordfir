@@ -192,3 +192,15 @@ ACTIVE restoration deliberately has no maximum snapshot age. Recovery must
 remain possible after a long REST interval, but restore enforces the same
 metadata checks. Confirmed apply and restore attempts append success or failure
 records to a mode-`0600` audit log inside the private state directory.
+
+## v0.5.6 recovery-state retirement
+
+After `restore-active-local` has verified the restored ACTIVE settings, the
+active snapshot is retired into a private `archive/` directory. Its name
+contains the node and original capture timestamp. The audit log stays in place.
+
+Retirement creates a hard link at a non-existing archive path, synchronizes the
+archive directory, removes the active snapshot and synchronizes the state
+directory. It therefore cannot overwrite prior history. If active-file removal
+fails, the archived copy remains available and Nordfir reports the incomplete
+retirement instead of pretending that a new cycle may start.

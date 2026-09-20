@@ -34,6 +34,8 @@ The current milestone is intentionally conservative.
 - Secure metadata checks for writable snapshot loads on Unix.
 - Fifteen-minute snapshot freshness requirement for REST apply.
 - Append-mode local audit records for confirmed apply and restore attempts.
+- Non-overwriting archival of recovery state after verified ACTIVE restore.
+- Durable directory synchronization around snapshot retirement.
 
 ### Safe defaults
 
@@ -50,10 +52,10 @@ The current milestone is intentionally conservative.
 
 ### Next milestone
 
-Harden the reversible Linux REST lifecycle for service deployment. Apply and
-ACTIVE restoration now produce durable local audit records. The next work
-should:
+Harden the reversible Linux REST lifecycle for service deployment. Apply,
+ACTIVE restoration, audit and recovery-state retirement are now available. The
+next work should:
 
-1. make recovery-state retirement/rotation explicit after successful restore;
-2. add tamper evidence or forward audit shipping;
-3. exercise apply and restore on explicitly selected test hardware.
+1. add tamper evidence or forward audit shipping;
+2. exercise apply and restore on explicitly selected test hardware;
+3. define the long-running service and least-privilege deployment model.
