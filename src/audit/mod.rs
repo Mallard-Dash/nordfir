@@ -18,6 +18,7 @@ pub enum AuditEventKind {
     PreflightCompleted,
     ActionExecuted,
     ActionFailed,
+    RecoveryStateRetired,
     PolicyChanged,
 }
 
@@ -138,6 +139,7 @@ fn event_kind(kind: &AuditEventKind) -> &'static str {
         AuditEventKind::PreflightCompleted => "preflight_completed",
         AuditEventKind::ActionExecuted => "action_executed",
         AuditEventKind::ActionFailed => "action_failed",
+        AuditEventKind::RecoveryStateRetired => "recovery_state_retired",
         AuditEventKind::PolicyChanged => "policy_changed",
     }
 }

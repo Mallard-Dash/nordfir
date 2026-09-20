@@ -54,6 +54,10 @@ REST apply additionally requires a snapshot captured within the last 15
 minutes. Every confirmed apply or restore attempt appends a result to
 `<state-directory>/audit.log`.
 
+After a verified ACTIVE restore, Nordfir retires the active snapshot into the
+private `<state-directory>/archive/` directory. The archived recovery point is
+preserved, while a new REST cycle can capture a fresh non-overwriting snapshot.
+
 ## Documentation
 
 - `docs/ARCHITECTURE.md` — subsystem boundaries and the one-engine model.
