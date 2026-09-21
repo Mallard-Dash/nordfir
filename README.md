@@ -24,6 +24,7 @@ cargo run -- power-capabilities-local
 cargo run -- plan-rest-local
 cargo run -- save-original-state-local ./nordfir-state
 cargo run -- show-original-state-local ./nordfir-state
+cargo run -- lifecycle-status-local ./nordfir-state
 cargo run -- economize-local
 ```
 
@@ -33,6 +34,8 @@ to them. `plan-rest-local` creates a typed, non-executable REST change plan.
 `save-original-state-local` records the current governor and configured CPU
 frequency range without overwriting an existing snapshot. `show-original-state-local`
 validates and displays that snapshot.
+`lifecycle-status-local` safely reports whether recovery is armed, how many
+recovery snapshots have been archived and whether the local audit log is ready.
 `economize-local` evaluates an `Economize` intent and records the resulting
 REST action through a non-destructive dry-run driver.
 

@@ -127,6 +127,13 @@ pub struct OriginalPowerStateStore {
     root: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecoveryLifecycleStatus {
+    pub state_directory_initialized: bool,
+    pub active_snapshot: Option<OriginalPowerState>,
+    pub archived_snapshots: usize,
+}
+
 impl OriginalPowerStateStore {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
@@ -153,6 +160,48 @@ impl OriginalPowerStateStore {
             return Err(format!("write {}: {error}", path.display()));
         }
         Ok(path)
+    }
+
+    /// Inspects recovery artifacts without creating or changing state.
+    pub fn inspect_lifecycle(
+        &self,
+        expected_node: &NodeId,
+    ) -> Result<RecoveryLifecycleStatus, String> {
+        validate_token("node", &expected_node.0)?;
+        match fs::symlink_metadata(&self.root) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(RecoveryLifecycleStatus {
+                    state_directory_initialized: false,
+                    active_snapshot: None,
+                    archived_snapshots: 0,
+                });
+            }
+            Err(error) => {
+                return Err(format!(
+                    "inspect state directory {}: {error}",
+                    self.root.display()
+                ));
+            }
+            Ok(_) => {
+                Self::validate_secure_directory(&self.root)?;
+            }
+        }
+
+        let active_path = self.path_for(expected_node)?;
+        let active_snapshot = match fs::symlink_metadata(&active_path) {
+            Ok(_) => Some(self.load_for_write(expected_node)?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => {
+                return Err(format!("inspect state file {}: {error}", active_path.display()));
+            }
+        };
+
+        let archived_snapshots = self.inspect_archive(expected_node)?;
+        Ok(RecoveryLifecycleStatus {
+            state_directory_initialized: true,
+            active_snapshot,
+            archived_snapshots,
+        })
     }
 
     pub fn load(&self, expected_node: &NodeId) -> Result<OriginalPowerState, String> {
@@ -314,9 +363,90 @@ impl OriginalPowerStateStore {
         Ok(())
     }
 
+    fn inspect_archive(&self, expected_node: &NodeId) -> Result<usize, String> {
+        let archive = self.root.join("archive");
+        let archive_metadata = match fs::symlink_metadata(&archive) {
+            Ok(_) => Self::validate_secure_directory(&archive)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => {
+                return Err(format!(
+                    "inspect archive directory {}: {error}",
+                    archive.display()
+                ));
+            }
+        };
+        let prefix = format!("{}.", expected_node.0);
+        let suffix = ".original-power-state";
+        let mut count = 0;
+
+        for entry in fs::read_dir(&archive)
+            .map_err(|error| format!("read archive directory {}: {error}", archive.display()))?
+        {
+            let entry = entry.map_err(|error| {
+                format!("read archive entry in {}: {error}", archive.display())
+            })?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.starts_with(&prefix) || !name.ends_with(suffix) {
+                continue;
+            }
+            let metadata = fs::symlink_metadata(entry.path()).map_err(|error| {
+                format!("inspect archived state {}: {error}", entry.path().display())
+            })?;
+            Self::validate_secure_file(&metadata, &archive_metadata)?;
+            let state = OriginalPowerState::decode(
+                &fs::read_to_string(entry.path()).map_err(|error| {
+                    format!("read archived state {}: {error}", entry.path().display())
+                })?,
+            )?;
+            if &state.node != expected_node {
+                return Err(format!(
+                    "archived state belongs to node '{}' instead of '{}'",
+                    state.node, expected_node
+                ));
+            }
+            let expected_name = format!(
+                "{}.{}.original-power-state",
+                expected_node.0, state.captured_at_unix_seconds
+            );
+            if name.as_ref() != expected_name.as_str() {
+                return Err(format!("archived state has inconsistent filename: {name}"));
+            }
+            count += 1;
+        }
+        Ok(count)
+    }
+
     fn path_for(&self, node: &NodeId) -> Result<PathBuf, String> {
         validate_token("node", &node.0)?;
         Ok(self.root.join(format!("{}.original-power-state", node.0)))
+    }
+
+    #[cfg(unix)]
+    fn validate_secure_file(
+        file: &fs::Metadata,
+        directory: &fs::Metadata,
+    ) -> Result<(), String> {
+        use std::os::unix::fs::MetadataExt;
+
+        if !file.file_type().is_file() || file.file_type().is_symlink() {
+            return Err("recovery state must be a regular file".to_owned());
+        }
+        if file.mode() & 0o077 != 0 {
+            return Err("recovery state permissions must be 0600 or stricter".to_owned());
+        }
+        if file.uid() != directory.uid() {
+            return Err("recovery state and directory must have the same owner".to_owned());
+        }
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    fn validate_secure_file(
+        _file: &fs::Metadata,
+        _directory: &fs::Metadata,
+    ) -> Result<(), String> {
+        Err("recovery state inspection requires Unix file security checks".to_owned())
     }
 }
 
@@ -595,6 +725,32 @@ mod tests {
         assert!(result.is_err());
         assert!(active_path.exists());
         assert_eq!(fs::read_to_string(archived).unwrap(), "existing history");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn lifecycle_status_tracks_active_and_archived_recovery_state() {
+        let directory = temporary_directory("lifecycle-status");
+        let store = OriginalPowerStateStore::new(&directory);
+        let node = NodeId::new("local");
+
+        let missing = store.inspect_lifecycle(&node).unwrap();
+        assert!(!missing.state_directory_initialized);
+        assert!(missing.active_snapshot.is_none());
+        assert_eq!(missing.archived_snapshots, 0);
+        assert!(!directory.exists());
+
+        store.save(&state()).unwrap();
+        let active = store.inspect_lifecycle(&node).unwrap();
+        assert!(active.state_directory_initialized);
+        assert_eq!(active.active_snapshot, Some(state()));
+        assert_eq!(active.archived_snapshots, 0);
+
+        store.retire(&node).unwrap();
+        let retired = store.inspect_lifecycle(&node).unwrap();
+        assert!(retired.active_snapshot.is_none());
+        assert_eq!(retired.archived_snapshots, 1);
+
         fs::remove_dir_all(directory).unwrap();
     }
 }

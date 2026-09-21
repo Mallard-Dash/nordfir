@@ -240,6 +240,11 @@ under `archive/` and records `recovery_state_retired`. The archive operation
 refuses name collisions and preserves the audit log, allowing the next cycle to
 capture a new snapshot without deleting recovery history.
 
+`lifecycle-status-local` performs a read-only inspection of the same state
+directory. It validates private metadata and recovery artifacts before reporting
+whether recovery is armed, the number of node-specific archives and whether the
+audit log exists or can be created safely.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.

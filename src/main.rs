@@ -5,7 +5,7 @@ use std::{
 };
 
 use nordfir::{
-    audit::{AuditEvent, AuditEventKind, AuditSink, FileAuditSink},
+    audit::{AuditEvent, AuditEventKind, AuditLogStatus, AuditSink, FileAuditSink},
     authority::{AuthorityPolicy, AuthorizationDecision, PolicyAuthorityGate},
     core::{AvailabilityIntent, Intent, IntentTarget, NodeId},
     drivers::{Driver, DryRunDriver, LinuxRestDriver},
@@ -67,6 +67,47 @@ fn run() -> Result<(), String> {
         let state = OriginalPowerStateStore::new(state_directory).load(&NodeId::new("local"))?;
         print_original_power_state(&state);
         println!("No system power settings were changed.");
+        return Ok(());
+    }
+
+    if command == "lifecycle-status-local" {
+        let state_directory = required_state_directory(&command)?;
+        let node = NodeId::new("local");
+        let status = OriginalPowerStateStore::new(&state_directory).inspect_lifecycle(&node)?;
+        println!("Node: {node}");
+        if !status.state_directory_initialized {
+            println!("State directory: Not initialized");
+            println!("Recovery phase: Idle");
+            println!("Active recovery snapshot: Absent");
+            println!("Archived recovery snapshots: 0");
+            println!("Audit log: Not initialized");
+        } else {
+            println!("State directory: Ready");
+            match status.active_snapshot {
+                Some(state) => {
+                    println!("Recovery phase: Armed");
+                    println!(
+                        "Active recovery snapshot: Ready (captured at Unix time {})",
+                        state.captured_at_unix_seconds
+                    );
+                }
+                None => {
+                    println!("Recovery phase: Idle");
+                    println!("Active recovery snapshot: Absent");
+                }
+            }
+            println!(
+                "Archived recovery snapshots: {}",
+                status.archived_snapshots
+            );
+            match audit_sink(&state_directory).inspect()? {
+                AuditLogStatus::ReadyToCreate => {
+                    println!("Audit log: Ready to create on first write");
+                }
+                AuditLogStatus::Ready => println!("Audit log: Ready"),
+            }
+        }
+        println!("No system settings were changed.");
         return Ok(());
     }
 
@@ -195,7 +236,7 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, apply-rest-local, restore-active-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, lifecycle-status-local, apply-rest-local, restore-active-local or economize-local"
         )),
     }
 }

@@ -112,6 +112,10 @@ The archive directory remains private, and directory metadata is synchronized
 around the transition. Failure leaves recovery data available and is surfaced
 through both the command result and audit path.
 
+The read-only lifecycle status command applies the same metadata validation to
+active recovery state, node-specific archives and the audit path. It does not
+repair, create or otherwise mutate those artifacts.
+
 ## Network boundary
 
 Nordfir should be designed to operate entirely on a private network. Internet exposure must never be required for core functionality.
