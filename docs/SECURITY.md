@@ -118,6 +118,27 @@ unsafe audit destinations before an operator invokes a writable command.
 Existing audit logs must retain an owner-write bit; private but read-only logs
 are blocked during both preflight inspection and event recording.
 
+## Least-privilege service profile
+
+The eventual long-running observer should use a dedicated non-root account and
+must start with `NoNewPrivileges=true`, `CapabilityBoundingSet=` and
+`AmbientCapabilities=`. `deployment-security-local` verifies the corresponding
+Linux process state without changing it. A passing process has matching real,
+effective, saved-set and filesystem user IDs, plus empty `CapEff` and `CapBnd`
+sets.
+
+The service account should own a private `0700` state directory. Access to the
+specific cpufreq controls needed by the typed REST driver must be delegated by
+the host configuration; Nordfir should not receive root, broad capabilities or
+arbitrary `/sys` write access to compensate for missing delegation. The
+deployment should additionally restrict address families to `AF_UNIX` unless a
+separately reviewed feature requires network access.
+
+This runtime check covers process credentials only. It does not claim that a
+daemon loop, systemd unit, filesystem sandbox or host-side cpufreq delegation
+has been implemented. Those pieces must be reviewed together before enabling
+unattended writes.
+
 ## Recovery-state retirement
 
 An active recovery snapshot is archived only after ACTIVE settings have been

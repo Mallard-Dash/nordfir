@@ -7,6 +7,7 @@ pub mod action;
 pub mod audit;
 pub mod authority;
 pub mod core;
+pub mod deployment;
 pub mod drivers;
 pub mod energy;
 pub mod engine;

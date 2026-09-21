@@ -40,6 +40,7 @@ The current milestone is intentionally conservative.
 - Optional fail-closed audit forwarding to a Unix datagram collector.
 - Explicit-host, read-only REST deployment preflight with aggregated blockers.
 - Owner-write validation for existing audit logs before deployment or writes.
+- Read-only Linux process-confinement inspection for least-privilege deployment.
 
 ### Safe defaults
 
@@ -61,5 +62,6 @@ ACTIVE restoration, audit and recovery-state retirement are now available. The
 next work should:
 
 1. exercise apply and restore on hardware that passes deployment preflight;
-2. define the long-running service and least-privilege deployment model;
+2. implement and exercise the long-running service around the defined
+   least-privilege runtime boundary;
 3. add cryptographic tamper evidence or an externally anchored audit receipt.

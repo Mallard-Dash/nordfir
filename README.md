@@ -26,6 +26,7 @@ cargo run -- save-original-state-local ./nordfir-state
 cargo run -- show-original-state-local ./nordfir-state
 cargo run -- lifecycle-status-local ./nordfir-state
 cargo run -- preflight-rest-local ./nordfir-state --expect-host my-test-node
+cargo run -- deployment-security-local
 cargo run -- economize-local
 ```
 
@@ -40,6 +41,10 @@ recovery snapshots have been archived and whether the local audit log is ready.
 `preflight-rest-local` requires the expected hostname and combines host identity,
 fresh recovery state, REST planning, cpufreq write readiness, local audit and
 optional forwarding checks. It reports every blocker without changing the host.
+`deployment-security-local` reads the current Linux process status and verifies
+the runtime half of the least-privilege service boundary: a non-root account,
+`NoNewPrivs`, an empty effective capability set and an empty capability bounding
+set. It is expected to fail during an ordinary interactive development run.
 `economize-local` evaluates an `Economize` intent and records the resulting
 REST action through a non-destructive dry-run driver.
 

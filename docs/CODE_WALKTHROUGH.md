@@ -258,6 +258,11 @@ controls, the local audit path and optional forwarding socket. It reports all
 checks and exits unsuccessfully when any check is blocked. It never invokes the
 REST driver.
 
+`deployment-security-local` parses `/proc/self/status` and reports whether the
+current process matches Nordfir's runtime security boundary: non-root with
+matching user IDs, `NoNewPrivs` enabled and no effective or bounding Linux
+capabilities. It is read-only and deliberately reports every failed condition.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.
@@ -277,8 +282,9 @@ The following items are intentionally deferred:
 - scheduling and demand prediction;
 - master-secret/2FA/hardware-key verification.
 
-The next safe implementation step is stronger audit tamper evidence or
-forwarding, followed by a least-privilege long-running service model.
+The next safe implementation step is to exercise the defined runtime security
+boundary around a reviewed long-running service model, then strengthen audit
+tamper evidence beyond the existing external forwarding option.
 
 ## Development-only generic power coefficients
 

@@ -11,6 +11,7 @@ use nordfir::{
     },
     authority::{AuthorityPolicy, AuthorizationDecision, PolicyAuthorityGate},
     core::{AvailabilityIntent, Intent, IntentTarget, NodeId},
+    deployment::LinuxProcessSecurity,
     drivers::{Driver, DryRunDriver, LinuxRestDriver},
     energy::{
         GenericEstimateProvider, LinearPowerModel, PowerProfile, PowerReader, RestChange,
@@ -182,6 +183,30 @@ fn run() -> Result<(), String> {
         };
     }
 
+    if command == "deployment-security-local" {
+        let security = LinuxProcessSecurity::read_current()?;
+        for check in security.checks() {
+            match check.result {
+                Ok(detail) => println!("Deployment {}: Ready - {detail}", check.name),
+                Err(detail) => println!("Deployment {}: Blocked - {detail}", check.name),
+            }
+        }
+        println!(
+            "Deployment security: {}",
+            if security.is_confined() {
+                "Ready"
+            } else {
+                "Blocked"
+            }
+        );
+        println!("No system settings were changed.");
+        return if security.is_confined() {
+            Ok(())
+        } else {
+            Err("process does not satisfy the least-privilege deployment profile".to_owned())
+        };
+    }
+
     if command == "apply-rest-local" {
         let state_directory = required_state_directory(&command)?;
         require_write_confirmation(&command)?;
@@ -307,7 +332,7 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, lifecycle-status-local, preflight-rest-local, apply-rest-local, restore-active-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, lifecycle-status-local, preflight-rest-local, deployment-security-local, apply-rest-local, restore-active-local or economize-local"
         )),
     }
 }
