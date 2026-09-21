@@ -393,10 +393,7 @@ fn required_state_directory(command: &str) -> Result<String, String> {
 }
 
 fn required_expected_host(command: &str) -> Result<String, String> {
-    match (
-        std::env::args().nth(3).as_deref(),
-        std::env::args().nth(4),
-    ) {
+    match (std::env::args().nth(3).as_deref(), std::env::args().nth(4)) {
         (Some("--expect-host"), Some(host)) if !host.trim().is_empty() => Ok(host),
         _ => Err(format!(
             "{command} requires <state-directory> --expect-host <hostname>"
