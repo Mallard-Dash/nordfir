@@ -40,51 +40,104 @@ pub struct FileAuditSink {
     path: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuditLogStatus {
+    ReadyToCreate,
+    Ready,
+}
+
 impl FileAuditSink {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
-}
 
-impl AuditSink for FileAuditSink {
-    fn record(&self, event: AuditEvent) -> Result<(), String> {
+    /// Checks whether the audit log can be used without creating or changing it.
+    pub fn inspect(&self) -> Result<AuditLogStatus, String> {
+        let parent_metadata = self.validate_parent()?;
+        match std::fs::symlink_metadata(&self.path) {
+            Ok(metadata) => {
+                self.validate_file(&metadata, &parent_metadata)?;
+                Ok(AuditLogStatus::Ready)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+
+                    if parent_metadata.mode() & 0o200 == 0 {
+                        return Err("audit directory must be owner-writable".to_owned());
+                    }
+                }
+                Ok(AuditLogStatus::ReadyToCreate)
+            }
+            Err(error) => Err(format!(
+                "inspect audit path {}: {error}",
+                self.path.display()
+            )),
+        }
+    }
+
+    fn validate_parent(&self) -> Result<std::fs::Metadata, String> {
         let parent = self
             .path
             .parent()
             .ok_or_else(|| "audit path has no parent directory".to_owned())?;
-        let parent_metadata = std::fs::symlink_metadata(parent)
+        let metadata = std::fs::symlink_metadata(parent)
             .map_err(|error| format!("inspect audit directory {}: {error}", parent.display()))?;
-        if !parent_metadata.file_type().is_dir() || parent_metadata.file_type().is_symlink() {
+        if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
             return Err("audit directory must be a real directory".to_owned());
-        }
-
-        if let Ok(metadata) = std::fs::symlink_metadata(&self.path) {
-            if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-                return Err("audit path must be a regular file".to_owned());
-            }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::MetadataExt;
-
-                if metadata.mode() & 0o077 != 0 {
-                    return Err("audit log permissions must be 0600 or stricter".to_owned());
-                }
-                if metadata.uid() != parent_metadata.uid() {
-                    return Err("audit log and directory must have the same owner".to_owned());
-                }
-            }
         }
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
 
-            if parent_metadata.mode() & 0o077 != 0 {
+            if metadata.mode() & 0o077 != 0 {
                 return Err("audit directory must not grant group/other access".to_owned());
             }
             #[cfg(target_os = "linux")]
-            if parent_metadata.uid() != effective_uid()? {
+            if metadata.uid() != effective_uid()? {
                 return Err("audit directory must be owned by the effective user".to_owned());
+            }
+        }
+        Ok(metadata)
+    }
+
+    fn validate_file(
+        &self,
+        metadata: &std::fs::Metadata,
+        parent_metadata: &std::fs::Metadata,
+    ) -> Result<(), String> {
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            return Err("audit path must be a regular file".to_owned());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+
+            if metadata.mode() & 0o077 != 0 {
+                return Err("audit log permissions must be 0600 or stricter".to_owned());
+            }
+            if metadata.uid() != parent_metadata.uid() {
+                return Err("audit log and directory must have the same owner".to_owned());
+            }
+        }
+        Ok(())
+    }
+}
+
+impl AuditSink for FileAuditSink {
+    fn record(&self, event: AuditEvent) -> Result<(), String> {
+        let parent_metadata = self.validate_parent()?;
+
+        match std::fs::symlink_metadata(&self.path) {
+            Ok(metadata) => self.validate_file(&metadata, &parent_metadata)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "inspect audit path {}: {error}",
+                    self.path.display()
+                ));
             }
         }
 
@@ -191,6 +244,39 @@ mod tests {
             content,
             "at=42\tactor=local\\tuser\tkind=action_executed\tmessage=REST\\napplied\n"
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn inspect_reports_ready_before_and_after_creation() {
+        let directory = std::env::temp_dir().join(format!(
+            "nordfir-audit-status-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let sink = FileAuditSink::new(directory.join("audit.log"));
+
+        assert_eq!(sink.inspect().unwrap(), AuditLogStatus::ReadyToCreate);
+        assert!(!directory.join("audit.log").exists());
+        sink.record(AuditEvent {
+            at: UNIX_EPOCH,
+            actor: "local-user".to_owned(),
+            kind: AuditEventKind::IntentReceived,
+            message: "test".to_owned(),
+        })
+        .unwrap();
+        assert_eq!(sink.inspect().unwrap(), AuditLogStatus::Ready);
+
         fs::remove_dir_all(directory).unwrap();
     }
 }

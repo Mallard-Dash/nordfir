@@ -36,6 +36,7 @@ The current milestone is intentionally conservative.
 - Append-mode local audit records for confirmed apply and restore attempts.
 - Non-overwriting archival of recovery state after verified ACTIVE restore.
 - Durable directory synchronization around snapshot retirement.
+- Read-only recovery lifecycle status for active, archived and audit state.
 
 ### Safe defaults
 

@@ -204,3 +204,11 @@ archive directory, removes the active snapshot and synchronizes the state
 directory. It therefore cannot overwrite prior history. If active-file removal
 fails, the archived copy remains available and Nordfir reports the incomplete
 retirement instead of pretending that a new cycle may start.
+
+## v0.5.7 lifecycle status
+
+`lifecycle-status-local` inspects the private state directory without changing
+it. The command reports whether a validated active recovery snapshot arms the
+current cycle, counts validated node-specific archives and checks whether the
+audit log is safe to append or create. Unsafe or inconsistent artifacts fail
+the inspection instead of being presented as ready.
