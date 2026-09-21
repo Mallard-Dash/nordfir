@@ -245,6 +245,12 @@ directory. It validates private metadata and recovery artifacts before reporting
 whether recovery is armed, the number of node-specific archives and whether the
 audit log exists or can be created safely.
 
+When `NORDFIR_AUDIT_FORWARD_SOCKET` names an absolute Unix socket path, writable
+commands fan each audit event out to the private file and a local collector.
+Both destinations are attempted, failures are surfaced, and the initial intent
+must reach both before Nordfir performs a power write. The collector can carry
+events across the host trust boundary without giving Nordfir network authority.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.

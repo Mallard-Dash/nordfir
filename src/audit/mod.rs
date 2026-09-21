@@ -6,7 +6,9 @@ use std::{
 };
 
 #[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::{fs::OpenOptionsExt, net::UnixDatagram};
+
+pub const AUDIT_FORWARD_SOCKET_ENV: &str = "NORDFIR_AUDIT_FORWARD_SOCKET";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuditEventKind {
@@ -44,6 +46,109 @@ pub struct FileAuditSink {
 pub enum AuditLogStatus {
     ReadyToCreate,
     Ready,
+}
+
+/// Sends each audit event to every configured sink and reports all failures.
+pub struct FanoutAuditSink {
+    sinks: Vec<Box<dyn AuditSink>>,
+}
+
+impl FanoutAuditSink {
+    pub fn new(sinks: Vec<Box<dyn AuditSink>>) -> Result<Self, String> {
+        if sinks.is_empty() {
+            return Err("audit fanout requires at least one sink".to_owned());
+        }
+        Ok(Self { sinks })
+    }
+}
+
+impl AuditSink for FanoutAuditSink {
+    fn record(&self, event: AuditEvent) -> Result<(), String> {
+        let mut failures = Vec::new();
+        for (index, sink) in self.sinks.iter().enumerate() {
+            if let Err(error) = sink.record(event.clone()) {
+                failures.push(format!("sink {}: {error}", index + 1));
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("audit fanout failed: {}", failures.join("; ")))
+        }
+    }
+}
+
+/// Forwards newline-delimited audit events to a local Unix datagram collector.
+#[derive(Debug, Clone)]
+pub struct UnixDatagramAuditSink {
+    path: PathBuf,
+}
+
+impl UnixDatagramAuditSink {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Validates the forwarding destination without sending an event.
+    pub fn inspect(&self) -> Result<(), String> {
+        if !self.path.is_absolute() {
+            return Err("audit forwarding socket path must be absolute".to_owned());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileTypeExt;
+
+            let metadata = std::fs::symlink_metadata(&self.path).map_err(|error| {
+                format!(
+                    "inspect audit forwarding socket {}: {error}",
+                    self.path.display()
+                )
+            })?;
+            if !metadata.file_type().is_socket() || metadata.file_type().is_symlink() {
+                return Err("audit forwarding destination must be a Unix socket".to_owned());
+            }
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        {
+            Err("audit forwarding requires Unix datagram sockets".to_owned())
+        }
+    }
+}
+
+impl AuditSink for UnixDatagramAuditSink {
+    fn record(&self, event: AuditEvent) -> Result<(), String> {
+        self.inspect()?;
+        #[cfg(unix)]
+        {
+            let line = encode_event(&event)?;
+            let socket = UnixDatagram::unbound()
+                .map_err(|error| format!("create audit forwarding socket: {error}"))?;
+            let sent = socket.send_to(line.as_bytes(), &self.path).map_err(|error| {
+                format!(
+                    "forward audit event to {}: {error}",
+                    self.path.display()
+                )
+            })?;
+            if sent != line.len() {
+                return Err(format!(
+                    "forwarded {sent} of {} audit bytes to {}",
+                    line.len(),
+                    self.path.display()
+                ));
+            }
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = event;
+            Err("audit forwarding requires Unix datagram sockets".to_owned())
+        }
+    }
 }
 
 impl FileAuditSink {
@@ -141,17 +246,7 @@ impl AuditSink for FileAuditSink {
             }
         }
 
-        let timestamp = event
-            .at
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| "audit timestamp predates the Unix epoch".to_owned())?
-            .as_secs();
-        let line = format!(
-            "at={timestamp}\tactor={}\tkind={}\tmessage={}\n",
-            escape_field(&event.actor),
-            event_kind(&event.kind),
-            escape_field(&event.message)
-        );
+        let line = encode_event(&event)?;
 
         let mut options = OpenOptions::new();
         options.append(true).create(true);
@@ -164,6 +259,20 @@ impl AuditSink for FileAuditSink {
             .and_then(|_| file.sync_data())
             .map_err(|error| format!("append audit log {}: {error}", self.path.display()))
     }
+}
+
+fn encode_event(event: &AuditEvent) -> Result<String, String> {
+    let timestamp = event
+        .at
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "audit timestamp predates the Unix epoch".to_owned())?
+        .as_secs();
+    Ok(format!(
+        "at={timestamp}\tactor={}\tkind={}\tmessage={}\n",
+        escape_field(&event.actor),
+        event_kind(&event.kind),
+        escape_field(&event.message)
+    ))
 }
 
 #[cfg(target_os = "linux")]
@@ -207,7 +316,14 @@ fn escape_field(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, time::Duration};
+    use std::{
+        fs,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
 
     use super::*;
 
@@ -278,5 +394,85 @@ mod tests {
         assert_eq!(sink.inspect().unwrap(), AuditLogStatus::Ready);
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn forwards_audit_events_to_a_unix_datagram_collector() {
+        let directory = std::env::temp_dir().join(format!(
+            "nordfir-audit-forward-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("collector.sock");
+        let receiver = UnixDatagram::bind(&path).unwrap();
+        let sink = UnixDatagramAuditSink::new(&path);
+
+        sink.inspect().unwrap();
+        sink.record(AuditEvent {
+            at: UNIX_EPOCH + Duration::from_secs(84),
+            actor: "local-user".to_owned(),
+            kind: AuditEventKind::ActionExecuted,
+            message: "REST applied".to_owned(),
+        })
+        .unwrap();
+
+        let mut buffer = [0_u8; 256];
+        let received = receiver.recv(&mut buffer).unwrap();
+        assert_eq!(
+            std::str::from_utf8(&buffer[..received]).unwrap(),
+            "at=84\tactor=local-user\tkind=action_executed\tmessage=REST applied\n"
+        );
+
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn fanout_attempts_every_sink_and_reports_failures() {
+        struct CountingSink {
+            calls: Arc<AtomicUsize>,
+            fail: bool,
+        }
+
+        impl AuditSink for CountingSink {
+            fn record(&self, _event: AuditEvent) -> Result<(), String> {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                if self.fail {
+                    Err("collector unavailable".to_owned())
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        let failed_calls = Arc::new(AtomicUsize::new(0));
+        let successful_calls = Arc::new(AtomicUsize::new(0));
+        let sink = FanoutAuditSink::new(vec![
+            Box::new(CountingSink {
+                calls: Arc::clone(&failed_calls),
+                fail: true,
+            }),
+            Box::new(CountingSink {
+                calls: Arc::clone(&successful_calls),
+                fail: false,
+            }),
+        ])
+        .unwrap();
+
+        let result = sink.record(AuditEvent {
+            at: UNIX_EPOCH,
+            actor: "local-user".to_owned(),
+            kind: AuditEventKind::IntentReceived,
+            message: "test".to_owned(),
+        });
+
+        assert!(result.unwrap_err().contains("sink 1"));
+        assert_eq!(failed_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(successful_calls.load(Ordering::Relaxed), 1);
     }
 }

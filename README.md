@@ -57,6 +57,18 @@ REST apply additionally requires a snapshot captured within the last 15
 minutes. Every confirmed apply or restore attempt appends a result to
 `<state-directory>/audit.log`.
 
+Audit events can also be forwarded to a separate local collector over a Unix
+datagram socket:
+
+```bash
+export NORDFIR_AUDIT_FORWARD_SOCKET=/run/nordfir-audit/collector.sock
+```
+
+When configured, Nordfir writes every event to both the private local log and
+the collector. An unavailable or invalid collector is surfaced as an error; an
+initial intent must reach both sinks before any power setting is changed. The
+collector owns durable remote transport and storage beyond the host.
+
 After a verified ACTIVE restore, Nordfir retires the active snapshot into the
 private `<state-directory>/archive/` directory. The archived recovery point is
 preserved, while a new REST cycle can capture a fresh non-overwriting snapshot.

@@ -212,3 +212,11 @@ it. The command reports whether a validated active recovery snapshot arms the
 current cycle, counts validated node-specific archives and checks whether the
 audit log is safe to append or create. Unsafe or inconsistent artifacts fail
 the inspection instead of being presented as ready.
+
+## v0.5.8 audit forwarding
+
+Writable lifecycle commands can fan audit events out to the private local log
+and an explicitly configured Unix datagram collector. The forwarding path is
+absolute and must already exist as a socket. Nordfir does not gain network
+credentials or remote-write authority; a separate collector owns transport and
+durable storage. Failure to deliver the initial intent blocks the power action.

@@ -104,6 +104,13 @@ prevents accidental truncation but is not cryptographic tamper evidence. A
 future deployment should forward records to a separate trust boundary or add a
 verifiable hash chain.
 
+`NORDFIR_AUDIT_FORWARD_SOCKET` enables a narrow handoff to a separate collector
+through an existing Unix datagram socket. Nordfir validates that the absolute
+destination is a socket, attempts both the local and forwarding sinks, and
+surfaces every delivery failure. If the initial intent cannot reach both sinks,
+the requested power write does not begin. The collector, not Nordfir, owns any
+network credentials and remote durable storage.
+
 ## Recovery-state retirement
 
 An active recovery snapshot is archived only after ACTIVE settings have been

@@ -5,7 +5,10 @@ use std::{
 };
 
 use nordfir::{
-    audit::{AuditEvent, AuditEventKind, AuditLogStatus, AuditSink, FileAuditSink},
+    audit::{
+        AUDIT_FORWARD_SOCKET_ENV, AuditEvent, AuditEventKind, AuditLogStatus, AuditSink,
+        FanoutAuditSink, FileAuditSink, UnixDatagramAuditSink,
+    },
     authority::{AuthorityPolicy, AuthorizationDecision, PolicyAuthorityGate},
     core::{AvailabilityIntent, Intent, IntentTarget, NodeId},
     drivers::{Driver, DryRunDriver, LinuxRestDriver},
@@ -97,12 +100,19 @@ fn run() -> Result<(), String> {
                 }
             }
             println!("Archived recovery snapshots: {}", status.archived_snapshots);
-            match audit_sink(&state_directory).inspect()? {
+            match file_audit_sink(&state_directory).inspect()? {
                 AuditLogStatus::ReadyToCreate => {
                     println!("Audit log: Ready to create on first write");
                 }
                 AuditLogStatus::Ready => println!("Audit log: Ready"),
             }
+        }
+        match configured_forward_audit_sink()? {
+            Some(sink) => {
+                sink.inspect()?;
+                println!("Audit forwarding: Ready ({})", sink.path().display());
+            }
+            None => println!("Audit forwarding: Disabled"),
         }
         println!("No system settings were changed.");
         return Ok(());
@@ -111,9 +121,9 @@ fn run() -> Result<(), String> {
     if command == "apply-rest-local" {
         let state_directory = required_state_directory(&command)?;
         require_write_confirmation(&command)?;
-        let audit = audit_sink(&state_directory);
+        let audit = audit_sink(&state_directory)?;
         record_audit(
-            &audit,
+            audit.as_ref(),
             AuditEventKind::IntentReceived,
             "REST apply requested",
         )?;
@@ -135,15 +145,15 @@ fn run() -> Result<(), String> {
                 }
                 Ok(())
             })();
-        return finish_audited(&audit, "REST apply", result);
+        return finish_audited(audit.as_ref(), "REST apply", result);
     }
 
     if command == "restore-active-local" {
         let state_directory = required_state_directory(&command)?;
         require_write_confirmation(&command)?;
-        let audit = audit_sink(&state_directory);
+        let audit = audit_sink(&state_directory)?;
         record_audit(
-            &audit,
+            audit.as_ref(),
             AuditEventKind::IntentReceived,
             "ACTIVE restore requested",
         )?;
@@ -162,14 +172,14 @@ fn run() -> Result<(), String> {
             }
             let archived = store.retire(&node)?;
             record_audit(
-                &audit,
+                audit.as_ref(),
                 AuditEventKind::RecoveryStateRetired,
                 &format!("recovery snapshot archived at {}", archived.display()),
             )?;
             println!("Archived recovery state: {}", archived.display());
             Ok(())
         })();
-        return finish_audited(&audit, "ACTIVE restore", result);
+        return finish_audited(audit.as_ref(), "ACTIVE restore", result);
     }
 
     let node = NodeId::new("local");
@@ -238,11 +248,32 @@ fn run() -> Result<(), String> {
     }
 }
 
-fn audit_sink(state_directory: &str) -> FileAuditSink {
+fn file_audit_sink(state_directory: &str) -> FileAuditSink {
     FileAuditSink::new(Path::new(state_directory).join("audit.log"))
 }
 
-fn record_audit(audit: &FileAuditSink, kind: AuditEventKind, message: &str) -> Result<(), String> {
+fn configured_forward_audit_sink() -> Result<Option<UnixDatagramAuditSink>, String> {
+    match std::env::var_os(AUDIT_FORWARD_SOCKET_ENV) {
+        Some(path) if path.is_empty() => {
+            Err(format!("{AUDIT_FORWARD_SOCKET_ENV} must not be empty"))
+        }
+        Some(path) => Ok(Some(UnixDatagramAuditSink::new(path))),
+        None => Ok(None),
+    }
+}
+
+fn audit_sink(state_directory: &str) -> Result<Box<dyn AuditSink>, String> {
+    let local: Box<dyn AuditSink> = Box::new(file_audit_sink(state_directory));
+    match configured_forward_audit_sink()? {
+        Some(forward) => Ok(Box::new(FanoutAuditSink::new(vec![
+            local,
+            Box::new(forward),
+        ])?)),
+        None => Ok(local),
+    }
+}
+
+fn record_audit(audit: &dyn AuditSink, kind: AuditEventKind, message: &str) -> Result<(), String> {
     audit.record(AuditEvent {
         at: SystemTime::now(),
         actor: "local-user".to_owned(),
@@ -252,7 +283,7 @@ fn record_audit(audit: &FileAuditSink, kind: AuditEventKind, message: &str) -> R
 }
 
 fn finish_audited(
-    audit: &FileAuditSink,
+    audit: &dyn AuditSink,
     operation: &str,
     result: Result<(), String>,
 ) -> Result<(), String> {
