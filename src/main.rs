@@ -18,6 +18,9 @@ use nordfir::{
     },
     engine::Engine,
     guards::{RestActivityGuard, SshSessionGuard},
+    preflight::{
+        DeploymentPreflightReport, ReadinessStatus, evaluate_rest_plan, verify_expected_host,
+    },
     state::{LinuxPowerProbe, LinuxStateCollector, OriginalPowerState, OriginalPowerStateStore},
 };
 
@@ -116,6 +119,67 @@ fn run() -> Result<(), String> {
         }
         println!("No system settings were changed.");
         return Ok(());
+    }
+
+    if command == "preflight-rest-local" {
+        let state_directory = required_state_directory(&command)?;
+        let expected_host = required_expected_host(&command)?;
+        let observed_host = read_local_hostname();
+        let mut report = DeploymentPreflightReport::default();
+
+        report.record(
+            "Host identity",
+            observed_host.and_then(|observed| verify_expected_host(&expected_host, &observed)),
+        );
+
+        let node = NodeId::new("local");
+        let store = OriginalPowerStateStore::new(&state_directory);
+        report.record(
+            "Recovery snapshot",
+            store
+                .load_fresh_for_write(&node, SystemTime::now(), Duration::from_secs(15 * 60))
+                .map(|state| {
+                    format!(
+                        "secure and fresh (captured at Unix time {})",
+                        state.captured_at_unix_seconds
+                    )
+                }),
+        );
+
+        let capabilities = LinuxPowerProbe::default().probe();
+        let plan = RestPlanner::default().plan(&capabilities, &PowerProfile::rest_default());
+        report.record(
+            "REST plan",
+            evaluate_rest_plan(&plan, capabilities.control_writable),
+        );
+
+        report.record(
+            "Local audit",
+            file_audit_sink(&state_directory)
+                .inspect()
+                .map(|status| match status {
+                    AuditLogStatus::ReadyToCreate => "ready to create".to_owned(),
+                    AuditLogStatus::Ready => "ready to append".to_owned(),
+                }),
+        );
+        report.record(
+            "Audit forwarding",
+            match configured_forward_audit_sink() {
+                Ok(Some(sink)) => sink
+                    .inspect()
+                    .map(|()| format!("ready ({})", sink.path().display())),
+                Ok(None) => Ok("disabled; local audit remains enabled".to_owned()),
+                Err(error) => Err(error),
+            },
+        );
+
+        print_deployment_preflight(&report);
+        print_rest_plan(&plan, false);
+        return if report.is_ready() {
+            Ok(())
+        } else {
+            Err("REST deployment preflight is blocked".to_owned())
+        };
     }
 
     if command == "apply-rest-local" {
@@ -243,7 +307,7 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, lifecycle-status-local, apply-rest-local, restore-active-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, lifecycle-status-local, preflight-rest-local, apply-rest-local, restore-active-local or economize-local"
         )),
     }
 }
@@ -326,6 +390,47 @@ fn required_state_directory(command: &str) -> Result<String, String> {
     std::env::args()
         .nth(2)
         .ok_or_else(|| format!("{command} requires a <state-directory> argument"))
+}
+
+fn required_expected_host(command: &str) -> Result<String, String> {
+    match (
+        std::env::args().nth(3).as_deref(),
+        std::env::args().nth(4),
+    ) {
+        (Some("--expect-host"), Some(host)) if !host.trim().is_empty() => Ok(host),
+        _ => Err(format!(
+            "{command} requires <state-directory> --expect-host <hostname>"
+        )),
+    }
+}
+
+fn read_local_hostname() -> Result<String, String> {
+    let hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map_err(|error| format!("read local hostname: {error}"))?;
+    let hostname = hostname.trim();
+    if hostname.is_empty() {
+        Err("local hostname is empty".to_owned())
+    } else {
+        Ok(hostname.to_owned())
+    }
+}
+
+fn print_deployment_preflight(report: &DeploymentPreflightReport) {
+    for check in &report.checks {
+        let status = match check.status {
+            ReadinessStatus::Ready => "Ready",
+            ReadinessStatus::Blocked => "Blocked",
+        };
+        println!("Preflight {}: {} - {}", check.name, status, check.detail);
+    }
+    println!(
+        "Preflight status: {}",
+        if report.is_ready() {
+            "Ready"
+        } else {
+            "Blocked"
+        }
+    );
 }
 
 fn print_original_power_state(state: &OriginalPowerState) {

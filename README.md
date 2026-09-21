@@ -25,6 +25,7 @@ cargo run -- plan-rest-local
 cargo run -- save-original-state-local ./nordfir-state
 cargo run -- show-original-state-local ./nordfir-state
 cargo run -- lifecycle-status-local ./nordfir-state
+cargo run -- preflight-rest-local ./nordfir-state --expect-host my-test-node
 cargo run -- economize-local
 ```
 
@@ -36,6 +37,9 @@ frequency range without overwriting an existing snapshot. `show-original-state-l
 validates and displays that snapshot.
 `lifecycle-status-local` safely reports whether recovery is armed, how many
 recovery snapshots have been archived and whether the local audit log is ready.
+`preflight-rest-local` requires the expected hostname and combines host identity,
+fresh recovery state, REST planning, cpufreq write readiness, local audit and
+optional forwarding checks. It reports every blocker without changing the host.
 `economize-local` evaluates an `Economize` intent and records the resulting
 REST action through a non-destructive dry-run driver.
 

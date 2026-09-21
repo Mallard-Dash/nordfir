@@ -38,6 +38,8 @@ The current milestone is intentionally conservative.
 - Durable directory synchronization around snapshot retirement.
 - Read-only recovery lifecycle status for active, archived and audit state.
 - Optional fail-closed audit forwarding to a Unix datagram collector.
+- Explicit-host, read-only REST deployment preflight with aggregated blockers.
+- Owner-write validation for existing audit logs before deployment or writes.
 
 ### Safe defaults
 
@@ -58,6 +60,6 @@ Harden the reversible Linux REST lifecycle for service deployment. Apply,
 ACTIVE restoration, audit and recovery-state retirement are now available. The
 next work should:
 
-1. exercise apply and restore on explicitly selected test hardware;
+1. exercise apply and restore on hardware that passes deployment preflight;
 2. define the long-running service and least-privilege deployment model;
 3. add cryptographic tamper evidence or an externally anchored audit receipt.

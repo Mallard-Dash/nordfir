@@ -111,6 +111,13 @@ surfaces every delivery failure. If the initial intent cannot reach both sinks,
 the requested power write does not begin. The collector, not Nordfir, owns any
 network credentials and remote durable storage.
 
+Hardware tests should first run `preflight-rest-local` with `--expect-host`.
+The exact hostname match reduces wrong-node mistakes, while aggregated checks
+surface stale recovery state, blocked plans, unavailable cpufreq writes and
+unsafe audit destinations before an operator invokes a writable command.
+Existing audit logs must retain an owner-write bit; private but read-only logs
+are blocked during both preflight inspection and event recording.
+
 ## Recovery-state retirement
 
 An active recovery snapshot is archived only after ACTIVE settings have been

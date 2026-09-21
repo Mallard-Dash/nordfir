@@ -222,6 +222,9 @@ impl FileAuditSink {
             if metadata.mode() & 0o077 != 0 {
                 return Err("audit log permissions must be 0600 or stricter".to_owned());
             }
+            if metadata.mode() & 0o200 == 0 {
+                return Err("audit log must be owner-writable".to_owned());
+            }
             if metadata.uid() != parent_metadata.uid() {
                 return Err("audit log and directory must have the same owner".to_owned());
             }
@@ -392,6 +395,31 @@ mod tests {
         .unwrap();
         assert_eq!(sink.inspect().unwrap(), AuditLogStatus::Ready);
 
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn inspect_rejects_a_non_writable_audit_log() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = std::env::temp_dir().join(format!(
+            "nordfir-audit-readonly-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let path = directory.join("audit.log");
+        fs::write(&path, "existing event\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o400)).unwrap();
+
+        let result = FileAuditSink::new(&path).inspect();
+
+        assert!(result.unwrap_err().contains("owner-writable"));
         fs::remove_dir_all(directory).unwrap();
     }
 

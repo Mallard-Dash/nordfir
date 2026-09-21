@@ -220,3 +220,11 @@ and an explicitly configured Unix datagram collector. The forwarding path is
 absolute and must already exist as a socket. Nordfir does not gain network
 credentials or remote-write authority; a separate collector owns transport and
 durable storage. Failure to deliver the initial intent blocks the power action.
+
+## v0.5.9 deployment preflight
+
+Before a hardware REST test, `preflight-rest-local` compares an explicit
+expected hostname with the running Linux host and aggregates the complete local
+readiness path. It validates fresh recovery state, power capabilities, the REST
+plan, cpufreq write readiness and audit destinations. The command prints the
+plan with `Apply: false` and never calls a write driver.

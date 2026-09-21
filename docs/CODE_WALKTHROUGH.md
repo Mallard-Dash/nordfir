@@ -251,6 +251,13 @@ Both destinations are attempted, failures are surfaced, and the initial intent
 must reach both before Nordfir performs a power write. The collector can carry
 events across the host trust boundary without giving Nordfir network authority.
 
+`preflight-rest-local` requires an explicitly expected hostname and aggregates
+read-only evidence for a hardware test: observed host identity, a secure recovery
+snapshot no older than 15 minutes, an executable REST plan, writable cpufreq
+controls, the local audit path and optional forwarding socket. It reports all
+checks and exits unsuccessfully when any check is blocked. It never invokes the
+REST driver.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.
