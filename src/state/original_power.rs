@@ -192,7 +192,10 @@ impl OriginalPowerStateStore {
             Ok(_) => Some(self.load_for_write(expected_node)?),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error) => {
-                return Err(format!("inspect state file {}: {error}", active_path.display()));
+                return Err(format!(
+                    "inspect state file {}: {error}",
+                    active_path.display()
+                ));
             }
         };
 
@@ -382,9 +385,8 @@ impl OriginalPowerStateStore {
         for entry in fs::read_dir(&archive)
             .map_err(|error| format!("read archive directory {}: {error}", archive.display()))?
         {
-            let entry = entry.map_err(|error| {
-                format!("read archive entry in {}: {error}", archive.display())
-            })?;
+            let entry = entry
+                .map_err(|error| format!("read archive entry in {}: {error}", archive.display()))?;
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if !name.starts_with(&prefix) || !name.ends_with(suffix) {
@@ -394,11 +396,9 @@ impl OriginalPowerStateStore {
                 format!("inspect archived state {}: {error}", entry.path().display())
             })?;
             Self::validate_secure_file(&metadata, &archive_metadata)?;
-            let state = OriginalPowerState::decode(
-                &fs::read_to_string(entry.path()).map_err(|error| {
-                    format!("read archived state {}: {error}", entry.path().display())
-                })?,
-            )?;
+            let state = OriginalPowerState::decode(&fs::read_to_string(entry.path()).map_err(
+                |error| format!("read archived state {}: {error}", entry.path().display()),
+            )?)?;
             if &state.node != expected_node {
                 return Err(format!(
                     "archived state belongs to node '{}' instead of '{}'",
@@ -423,10 +423,7 @@ impl OriginalPowerStateStore {
     }
 
     #[cfg(unix)]
-    fn validate_secure_file(
-        file: &fs::Metadata,
-        directory: &fs::Metadata,
-    ) -> Result<(), String> {
+    fn validate_secure_file(file: &fs::Metadata, directory: &fs::Metadata) -> Result<(), String> {
         use std::os::unix::fs::MetadataExt;
 
         if !file.file_type().is_file() || file.file_type().is_symlink() {
@@ -442,10 +439,7 @@ impl OriginalPowerStateStore {
     }
 
     #[cfg(not(unix))]
-    fn validate_secure_file(
-        _file: &fs::Metadata,
-        _directory: &fs::Metadata,
-    ) -> Result<(), String> {
+    fn validate_secure_file(_file: &fs::Metadata, _directory: &fs::Metadata) -> Result<(), String> {
         Err("recovery state inspection requires Unix file security checks".to_owned())
     }
 }

@@ -96,10 +96,7 @@ fn run() -> Result<(), String> {
                     println!("Active recovery snapshot: Absent");
                 }
             }
-            println!(
-                "Archived recovery snapshots: {}",
-                status.archived_snapshots
-            );
+            println!("Archived recovery snapshots: {}", status.archived_snapshots);
             match audit_sink(&state_directory).inspect()? {
                 AuditLogStatus::ReadyToCreate => {
                     println!("Audit log: Ready to create on first write");
