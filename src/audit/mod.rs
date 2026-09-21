@@ -128,12 +128,11 @@ impl AuditSink for UnixDatagramAuditSink {
             let line = encode_event(&event)?;
             let socket = UnixDatagram::unbound()
                 .map_err(|error| format!("create audit forwarding socket: {error}"))?;
-            let sent = socket.send_to(line.as_bytes(), &self.path).map_err(|error| {
-                format!(
-                    "forward audit event to {}: {error}",
-                    self.path.display()
-                )
-            })?;
+            let sent = socket
+                .send_to(line.as_bytes(), &self.path)
+                .map_err(|error| {
+                    format!("forward audit event to {}: {error}", self.path.display())
+                })?;
             if sent != line.len() {
                 return Err(format!(
                     "forwarded {sent} of {} audit bytes to {}",
@@ -319,8 +318,8 @@ mod tests {
     use std::{
         fs,
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         },
         time::Duration,
     };
