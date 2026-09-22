@@ -27,6 +27,7 @@ cargo run -- show-original-state-local ./nordfir-state
 cargo run -- lifecycle-status-local ./nordfir-state
 cargo run -- preflight-rest-local ./nordfir-state --expect-host my-test-node
 cargo run -- deployment-security-local
+cargo run -- observe-service-local --interval-seconds 30 --max-cycles 3
 cargo run -- economize-local
 ```
 
@@ -45,6 +46,10 @@ optional forwarding checks. It reports every blocker without changing the host.
 the runtime half of the least-privilege service boundary: a non-root account,
 `NoNewPrivs`, an empty effective capability set and an empty capability bounding
 set. It is expected to fail during an ordinary interactive development run.
+`observe-service-local` is the first long-running service slice. It periodically
+collects the same read-only local snapshot and emits a compact heartbeat suitable
+for stdout or journald. Omit `--max-cycles` to keep it running until the process
+is terminated; the bounded form is intended for deployment tests.
 `economize-local` evaluates an `Economize` intent and records the resulting
 REST action through a non-destructive dry-run driver.
 

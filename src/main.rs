@@ -23,6 +23,7 @@ use nordfir::{
     preflight::{
         DeploymentPreflightReport, ReadinessStatus, evaluate_rest_plan, verify_expected_host,
     },
+    service::{ObserverConfig, ObserverService, ThreadObserverRuntime},
     state::{LinuxPowerProbe, LinuxStateCollector, OriginalPowerState, OriginalPowerStateStore},
 };
 
@@ -225,6 +226,33 @@ fn run() -> Result<(), String> {
         };
     }
 
+    if command == "observe-service-local" {
+        let arguments: Vec<String> = std::env::args().skip(2).collect();
+        let config = ObserverConfig::from_arguments(&arguments)
+            .map_err(|error| format!("{command} {error}"))?;
+        let service = ObserverService::new(config);
+        let mut runtime = ThreadObserverRuntime;
+        println!(
+            "Observer service: Starting (interval {} seconds)",
+            config.interval.as_secs()
+        );
+        println!("Observer mode: Read only");
+        let summary = service.run(
+            &mut runtime,
+            || collect_local_snapshot(NodeId::new("local")),
+            |heartbeat| {
+                println!("{}", heartbeat.encode_line());
+                Ok(())
+            },
+        )?;
+        println!(
+            "Observer service: Stopped after {} cycle(s)",
+            summary.completed_cycles
+        );
+        println!("No system settings were changed.");
+        return Ok(());
+    }
+
     if command == "apply-rest-local" {
         let state_directory = required_state_directory(&command)?;
         require_write_confirmation(&command)?;
@@ -290,23 +318,7 @@ fn run() -> Result<(), String> {
     }
 
     let node = NodeId::new("local");
-    let collector = LinuxStateCollector::default();
-    let mut snapshot = collector.collect(node.clone())?;
-
-    let power_reader = PowerReader::new(vec![Box::new(GenericEstimateProvider::new(
-        LinearPowerModel {
-            baseline_watts: 35.0,
-            cpu_watts_per_unit: 65.0,
-            memory_watts_per_unit: 12.0,
-            disk_watts_per_unit: 0.0,
-            network_watts_per_unit: 0.0,
-            typical_error_watts: Some(20.0),
-        },
-    ))]);
-
-    if let Ok(reading) = power_reader.read_best(&snapshot) {
-        snapshot.power = Some(reading);
-    }
+    let snapshot = collect_local_snapshot(node.clone())?;
 
     match command.as_str() {
         "inspect-local" => {
@@ -350,9 +362,28 @@ fn run() -> Result<(), String> {
             }
         }
         other => Err(format!(
-            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, lifecycle-status-local, preflight-rest-local, deployment-security-local, apply-rest-local, restore-active-local or economize-local"
+            "unknown command: {other}. Use inspect-local, power-capabilities-local, plan-rest-local, save-original-state-local, show-original-state-local, lifecycle-status-local, preflight-rest-local, deployment-security-local, observe-service-local, apply-rest-local, restore-active-local or economize-local"
         )),
     }
+}
+
+fn collect_local_snapshot(node: NodeId) -> Result<nordfir::core::NodeSnapshot, String> {
+    let collector = LinuxStateCollector::default();
+    let mut snapshot = collector.collect(node)?;
+    let power_reader = PowerReader::new(vec![Box::new(GenericEstimateProvider::new(
+        LinearPowerModel {
+            baseline_watts: 35.0,
+            cpu_watts_per_unit: 65.0,
+            memory_watts_per_unit: 12.0,
+            disk_watts_per_unit: 0.0,
+            network_watts_per_unit: 0.0,
+            typical_error_watts: Some(20.0),
+        },
+    ))]);
+    if let Ok(reading) = power_reader.read_best(&snapshot) {
+        snapshot.power = Some(reading);
+    }
+    Ok(snapshot)
 }
 
 fn file_audit_sink(state_directory: &str) -> FileAuditSink {

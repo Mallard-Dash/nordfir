@@ -268,6 +268,12 @@ current process matches Nordfir's runtime security boundary: non-root with
 matching user IDs, `NoNewPrivs` enabled and no effective or bounding Linux
 capabilities. It is read-only and deliberately reports every failed condition.
 
+`observe-service-local` runs repeated read-only collection cycles at an explicit
+interval and publishes one compact heartbeat per cycle. The loop accepts an
+optional maximum cycle count for deterministic deployment tests. Collection,
+publication, waiting and stop checks are separated so loop behavior can be unit
+tested without sleeping or touching a real host.
+
 `economize-local` creates `Intent::Economize`, evaluates guards and authority,
 and sends an allowed REST action to `DryRunDriver`. The command explicitly
 prints that no system settings were changed.

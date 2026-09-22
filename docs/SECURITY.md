@@ -147,6 +147,11 @@ daemon loop, systemd unit, filesystem sandbox or host-side cpufreq delegation
 has been implemented. Those pieces must be reviewed together before enabling
 unattended writes.
 
+The first observer service loop is deliberately read-only. It collects local
+state and publishes heartbeat lines, but it has no driver, authority grant or
+path to invoke REST, shutdown or service-control actions. Explicit signal-aware
+shutdown and supervised writable transitions remain separate deployment work.
+
 ## Recovery-state retirement
 
 An active recovery snapshot is archived only after ACTIVE settings have been

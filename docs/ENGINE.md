@@ -147,6 +147,7 @@ If predictive models are added in the future, they should remain optional and mu
 src/
 ├── action.rs
 ├── engine.rs
+├── service.rs       # read-only observer process loop
 ├── core/
 │   ├── intent.rs
 │   ├── node.rs

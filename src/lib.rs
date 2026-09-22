@@ -13,6 +13,7 @@ pub mod energy;
 pub mod engine;
 pub mod guards;
 pub mod preflight;
+pub mod service;
 pub mod timing;
 pub mod watchers;
 

@@ -43,6 +43,7 @@ The current milestone is intentionally conservative.
 - Owner-write validation for existing audit logs before deployment or writes.
 - Read-only Linux process-confinement inspection for least-privilege deployment.
 - Cohesive module layout without empty one-file placeholders.
+- Testable read-only observer service loop with bounded deployment-test mode.
 
 ### Safe defaults
 
@@ -64,7 +65,7 @@ ACTIVE restoration, audit and recovery-state retirement are now available. The
 next work should:
 
 1. exercise apply and restore on hardware that passes deployment preflight;
-2. implement and exercise the long-running service around the defined
-   least-privilege runtime boundary;
+2. exercise the read-only observer service under the defined least-privilege
+   runtime boundary, then add explicit shutdown handling and supervised writes;
 3. exercise externally anchored audit receipts with a production collector or
    add cryptographic tamper evidence to the local audit log.
