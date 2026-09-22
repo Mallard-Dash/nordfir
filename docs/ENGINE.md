@@ -151,12 +151,10 @@ src/
 │   ├── intent.rs
 │   ├── node.rs
 │   ├── observation.rs
-│   ├── power_mode.rs
-│   ├── service.rs
+│   ├── mod.rs          # small shared domain types
 │   └── snapshot.rs
 ├── authority/
-│   ├── capability.rs
-│   ├── challenge.rs
+│   ├── mod.rs          # capability and challenge types
 │   └── policy.rs
 ├── energy/
 │   ├── estimate.rs
@@ -172,6 +170,12 @@ src/
 ├── timing/
 └── audit/
 ```
+
+Files represent cohesive implementations, not individual future ideas. Small
+data-only types live in their parent `mod.rs`, and planned watcher or driver
+backends remain documented as inline modules until executable behavior exists.
+This keeps public module paths stable without filling the tree with empty
+placeholder files.
 
 ## Design boundary
 

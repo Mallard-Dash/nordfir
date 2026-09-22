@@ -1,9 +1,26 @@
+//! Typed action executors.
+//!
+//! A backend gets its own file once it has an implementation. Planned backends
+//! remain inline so empty placeholder files do not obscure the active code.
+
 pub mod dry_run;
-pub mod ipmi;
 pub mod linux_rest;
-pub mod local_power;
-pub mod ssh;
-pub mod wol;
+
+pub mod ipmi {
+    //! Reserved for a typed IPMI backend.
+}
+
+pub mod local_power {
+    //! Reserved for local suspend, shutdown and reboot actions.
+}
+
+pub mod ssh {
+    //! Reserved for a typed remote execution backend without arbitrary shell input.
+}
+
+pub mod wol {
+    //! Reserved for Wake-on-LAN actions.
+}
 
 use crate::action::Action;
 

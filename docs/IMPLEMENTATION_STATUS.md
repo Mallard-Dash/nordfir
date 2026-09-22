@@ -42,6 +42,7 @@ The current milestone is intentionally conservative.
 - Explicit-host, read-only REST deployment preflight with aggregated blockers.
 - Owner-write validation for existing audit logs before deployment or writes.
 - Read-only Linux process-confinement inspection for least-privilege deployment.
+- Cohesive module layout without empty one-file placeholders.
 
 ### Safe defaults
 
