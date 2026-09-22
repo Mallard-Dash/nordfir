@@ -71,10 +71,7 @@ impl LinuxProcessSecurity {
                 {
                     Err(format!(
                         "user ids differ (real={}, effective={}, saved={}, filesystem={})",
-                        self.real_uid,
-                        self.effective_uid,
-                        self.saved_set_uid,
-                        self.filesystem_uid
+                        self.real_uid, self.effective_uid, self.saved_set_uid, self.filesystem_uid
                     ))
                 } else {
                     Ok(format!("running as non-root uid {}", self.effective_uid))
