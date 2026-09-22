@@ -251,6 +251,11 @@ Both destinations are attempted, failures are surfaced, and the initial intent
 must reach both before Nordfir performs a power write. The collector can carry
 events across the host trust boundary without giving Nordfir network authority.
 
+When `NORDFIR_AUDIT_RECEIPT_SOCKET` is configured, Nordfir also opens a Unix
+stream connection for each audit event and requires a bounded, valid acceptance
+receipt from the collector. The initial intent is not considered audited until
+that acknowledgement arrives, so a missing receipt blocks the power write.
+
 `preflight-rest-local` requires an explicitly expected hostname and aggregates
 read-only evidence for a hardware test: observed host identity, a secure recovery
 snapshot no older than 15 minutes, an executable REST plan, writable cpufreq

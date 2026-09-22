@@ -2,13 +2,21 @@ use std::{
     fs::OpenOptions,
     io::Write,
     path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(unix)]
-use std::os::unix::{fs::OpenOptionsExt, net::UnixDatagram};
+use std::{
+    io::{BufRead, BufReader, Read},
+    net::Shutdown,
+    os::unix::{
+        fs::OpenOptionsExt,
+        net::{UnixDatagram, UnixStream},
+    },
+};
 
 pub const AUDIT_FORWARD_SOCKET_ENV: &str = "NORDFIR_AUDIT_FORWARD_SOCKET";
+pub const AUDIT_RECEIPT_SOCKET_ENV: &str = "NORDFIR_AUDIT_RECEIPT_SOCKET";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuditEventKind {
@@ -84,6 +92,13 @@ pub struct UnixDatagramAuditSink {
     path: PathBuf,
 }
 
+/// Sends an event to an external collector and requires an acceptance receipt.
+#[derive(Debug, Clone)]
+pub struct UnixReceiptAuditSink {
+    path: PathBuf,
+    timeout: Duration,
+}
+
 impl UnixDatagramAuditSink {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
@@ -95,28 +110,7 @@ impl UnixDatagramAuditSink {
 
     /// Validates the forwarding destination without sending an event.
     pub fn inspect(&self) -> Result<(), String> {
-        if !self.path.is_absolute() {
-            return Err("audit forwarding socket path must be absolute".to_owned());
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::FileTypeExt;
-
-            let metadata = std::fs::symlink_metadata(&self.path).map_err(|error| {
-                format!(
-                    "inspect audit forwarding socket {}: {error}",
-                    self.path.display()
-                )
-            })?;
-            if !metadata.file_type().is_socket() || metadata.file_type().is_symlink() {
-                return Err("audit forwarding destination must be a Unix socket".to_owned());
-            }
-            Ok(())
-        }
-        #[cfg(not(unix))]
-        {
-            Err("audit forwarding requires Unix datagram sockets".to_owned())
-        }
+        inspect_unix_socket(&self.path, "audit forwarding")
     }
 }
 
@@ -146,6 +140,64 @@ impl AuditSink for UnixDatagramAuditSink {
         {
             let _ = event;
             Err("audit forwarding requires Unix datagram sockets".to_owned())
+        }
+    }
+}
+
+impl UnixReceiptAuditSink {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            timeout: Duration::from_secs(5),
+        }
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// Validates the receipt destination without connecting or sending an event.
+    pub fn inspect(&self) -> Result<(), String> {
+        inspect_unix_socket(&self.path, "audit receipt")
+    }
+}
+
+impl AuditSink for UnixReceiptAuditSink {
+    fn record(&self, event: AuditEvent) -> Result<(), String> {
+        self.inspect()?;
+        #[cfg(unix)]
+        {
+            let line = encode_event(&event)?;
+            let mut stream = UnixStream::connect(&self.path).map_err(|error| {
+                format!(
+                    "connect to audit receipt collector {}: {error}",
+                    self.path.display()
+                )
+            })?;
+            stream
+                .set_read_timeout(Some(self.timeout))
+                .map_err(|error| format!("configure audit receipt timeout: {error}"))?;
+            stream
+                .set_write_timeout(Some(self.timeout))
+                .map_err(|error| format!("configure audit receipt timeout: {error}"))?;
+            stream
+                .write_all(line.as_bytes())
+                .map_err(|error| format!("send audit event for receipt: {error}"))?;
+            stream
+                .shutdown(Shutdown::Write)
+                .map_err(|error| format!("finish audit event for receipt: {error}"))?;
+
+            let mut response = String::new();
+            BufReader::new(stream.take(267))
+                .read_line(&mut response)
+                .map_err(|error| format!("read audit receipt: {error}"))?;
+            parse_receipt(&response)?;
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = event;
+            Err("audit receipts require Unix stream sockets".to_owned())
         }
     }
 }
@@ -277,6 +329,44 @@ fn encode_event(event: &AuditEvent) -> Result<String, String> {
     ))
 }
 
+fn parse_receipt(response: &str) -> Result<&str, String> {
+    let receipt = response
+        .strip_suffix('\n')
+        .and_then(|line| line.strip_prefix("accepted\t"))
+        .ok_or_else(|| "audit collector returned an invalid receipt".to_owned())?;
+    if receipt.is_empty() || receipt.len() > 256 {
+        return Err("audit receipt id must contain 1 to 256 bytes".to_owned());
+    }
+    if !receipt
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+    {
+        return Err("audit receipt id contains invalid characters".to_owned());
+    }
+    Ok(receipt)
+}
+
+fn inspect_unix_socket(path: &std::path::Path, purpose: &str) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err(format!("{purpose} socket path must be absolute"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
+
+        let metadata = std::fs::symlink_metadata(path)
+            .map_err(|error| format!("inspect {purpose} socket {}: {error}", path.display()))?;
+        if !metadata.file_type().is_socket() || metadata.file_type().is_symlink() {
+            return Err(format!("{purpose} destination must be a Unix socket"));
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        Err(format!("{purpose} requires Unix sockets"))
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn effective_uid() -> Result<u32, String> {
     let status = std::fs::read_to_string("/proc/self/status")
@@ -324,8 +414,10 @@ mod tests {
             Arc,
             atomic::{AtomicUsize, Ordering},
         },
-        time::Duration,
     };
+
+    #[cfg(unix)]
+    use std::thread;
 
     use super::*;
 
@@ -457,6 +549,52 @@ mod tests {
 
         fs::remove_file(path).unwrap();
         fs::remove_dir(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn requires_a_valid_external_audit_receipt() {
+        use std::os::unix::net::UnixListener;
+
+        let directory = std::env::temp_dir().join(format!(
+            "nordfir-audit-receipt-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("collector.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let collector = thread::spawn(move || {
+            let (mut connection, _) = listener.accept().unwrap();
+            let mut event = String::new();
+            connection.read_to_string(&mut event).unwrap();
+            assert!(event.contains("kind=action_executed"));
+            connection.write_all(b"accepted\treceipt-84\n").unwrap();
+        });
+
+        let sink = UnixReceiptAuditSink::new(&path);
+        sink.record(AuditEvent {
+            at: UNIX_EPOCH + Duration::from_secs(84),
+            actor: "local-user".to_owned(),
+            kind: AuditEventKind::ActionExecuted,
+            message: "REST applied".to_owned(),
+        })
+        .unwrap();
+        collector.join().unwrap();
+
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn rejects_malformed_audit_receipts() {
+        assert_eq!(parse_receipt("accepted\treceipt-84\n").unwrap(), "receipt-84");
+        assert!(parse_receipt("accepted\t\n").is_err());
+        assert!(parse_receipt("accepted\tbad receipt\n").is_err());
+        assert!(parse_receipt("rejected\treceipt-84\n").is_err());
     }
 
     #[test]

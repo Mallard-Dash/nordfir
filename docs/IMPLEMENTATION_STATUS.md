@@ -38,6 +38,7 @@ The current milestone is intentionally conservative.
 - Durable directory synchronization around snapshot retirement.
 - Read-only recovery lifecycle status for active, archived and audit state.
 - Optional fail-closed audit forwarding to a Unix datagram collector.
+- Optional externally anchored audit acknowledgement over a Unix stream.
 - Explicit-host, read-only REST deployment preflight with aggregated blockers.
 - Owner-write validation for existing audit logs before deployment or writes.
 - Read-only Linux process-confinement inspection for least-privilege deployment.
@@ -64,4 +65,5 @@ next work should:
 1. exercise apply and restore on hardware that passes deployment preflight;
 2. implement and exercise the long-running service around the defined
    least-privilege runtime boundary;
-3. add cryptographic tamper evidence or an externally anchored audit receipt.
+3. exercise externally anchored audit receipts with a production collector or
+   add cryptographic tamper evidence to the local audit log.

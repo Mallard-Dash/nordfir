@@ -78,6 +78,19 @@ the collector. An unavailable or invalid collector is surfaced as an error; an
 initial intent must reach both sinks before any power setting is changed. The
 collector owns durable remote transport and storage beyond the host.
 
+For deployments that require positive confirmation from a separate trust
+boundary, Nordfir can instead or additionally require an external receipt:
+
+```bash
+export NORDFIR_AUDIT_RECEIPT_SOCKET=/run/nordfir-audit/receipt.sock
+```
+
+The Unix stream collector must durably accept the newline-delimited event and
+reply with `accepted<TAB><receipt-id><LF>`. Receipt IDs may contain ASCII
+letters, digits, `-`, `_`, `.` and `:`. A missing, timed-out or malformed
+receipt fails the audit operation; the initial intent must be acknowledged
+before Nordfir changes a power setting.
+
 After a verified ACTIVE restore, Nordfir retires the active snapshot into the
 private `<state-directory>/archive/` directory. The archived recovery point is
 preserved, while a new REST cycle can capture a fresh non-overwriting snapshot.

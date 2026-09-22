@@ -111,6 +111,14 @@ surfaces every delivery failure. If the initial intent cannot reach both sinks,
 the requested power write does not begin. The collector, not Nordfir, owns any
 network credentials and remote durable storage.
 
+`NORDFIR_AUDIT_RECEIPT_SOCKET` strengthens that handoff when the collector can
+provide a positive durable-acceptance receipt. Nordfir connects over a Unix
+stream socket, sends one event, closes its write side and requires an
+`accepted<TAB><receipt-id><LF>` response within five seconds. Invalid or absent
+receipts fail closed. The receipt proves collector acknowledgement, not the
+integrity of the local file; the collector remains responsible for anchoring
+the receipt and event outside the host trust boundary.
+
 Hardware tests should first run `preflight-rest-local` with `--expect-host`.
 The exact hostname match reduces wrong-node mistakes, while aggregated checks
 surface stale recovery state, blocked plans, unavailable cpufreq writes and

@@ -6,8 +6,9 @@ use std::{
 
 use nordfir::{
     audit::{
-        AUDIT_FORWARD_SOCKET_ENV, AuditEvent, AuditEventKind, AuditLogStatus, AuditSink,
-        FanoutAuditSink, FileAuditSink, UnixDatagramAuditSink,
+        AUDIT_FORWARD_SOCKET_ENV, AUDIT_RECEIPT_SOCKET_ENV, AuditEvent, AuditEventKind,
+        AuditLogStatus, AuditSink, FanoutAuditSink, FileAuditSink, UnixDatagramAuditSink,
+        UnixReceiptAuditSink,
     },
     authority::{AuthorityPolicy, AuthorizationDecision, PolicyAuthorityGate},
     core::{AvailabilityIntent, Intent, IntentTarget, NodeId},
@@ -118,6 +119,13 @@ fn run() -> Result<(), String> {
             }
             None => println!("Audit forwarding: Disabled"),
         }
+        match configured_receipt_audit_sink()? {
+            Some(sink) => {
+                sink.inspect()?;
+                println!("Audit receipts: Ready ({})", sink.path().display());
+            }
+            None => println!("Audit receipts: Disabled"),
+        }
         println!("No system settings were changed.");
         return Ok(());
     }
@@ -166,6 +174,16 @@ fn run() -> Result<(), String> {
         report.record(
             "Audit forwarding",
             match configured_forward_audit_sink() {
+                Ok(Some(sink)) => sink
+                    .inspect()
+                    .map(|()| format!("ready ({})", sink.path().display())),
+                Ok(None) => Ok("disabled; local audit remains enabled".to_owned()),
+                Err(error) => Err(error),
+            },
+        );
+        report.record(
+            "Audit receipts",
+            match configured_receipt_audit_sink() {
                 Ok(Some(sink)) => sink
                     .inspect()
                     .map(|()| format!("ready ({})", sink.path().display())),
@@ -351,14 +369,28 @@ fn configured_forward_audit_sink() -> Result<Option<UnixDatagramAuditSink>, Stri
     }
 }
 
+fn configured_receipt_audit_sink() -> Result<Option<UnixReceiptAuditSink>, String> {
+    match std::env::var_os(AUDIT_RECEIPT_SOCKET_ENV) {
+        Some(path) if path.is_empty() => {
+            Err(format!("{AUDIT_RECEIPT_SOCKET_ENV} must not be empty"))
+        }
+        Some(path) => Ok(Some(UnixReceiptAuditSink::new(path))),
+        None => Ok(None),
+    }
+}
+
 fn audit_sink(state_directory: &str) -> Result<Box<dyn AuditSink>, String> {
-    let local: Box<dyn AuditSink> = Box::new(file_audit_sink(state_directory));
-    match configured_forward_audit_sink()? {
-        Some(forward) => Ok(Box::new(FanoutAuditSink::new(vec![
-            local,
-            Box::new(forward),
-        ])?)),
-        None => Ok(local),
+    let mut sinks: Vec<Box<dyn AuditSink>> = vec![Box::new(file_audit_sink(state_directory))];
+    if let Some(forward) = configured_forward_audit_sink()? {
+        sinks.push(Box::new(forward));
+    }
+    if let Some(receipt) = configured_receipt_audit_sink()? {
+        sinks.push(Box::new(receipt));
+    }
+    if sinks.len() == 1 {
+        Ok(sinks.remove(0))
+    } else {
+        Ok(Box::new(FanoutAuditSink::new(sinks)?))
     }
 }
 
