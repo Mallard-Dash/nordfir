@@ -591,7 +591,10 @@ mod tests {
 
     #[test]
     fn rejects_malformed_audit_receipts() {
-        assert_eq!(parse_receipt("accepted\treceipt-84\n").unwrap(), "receipt-84");
+        assert_eq!(
+            parse_receipt("accepted\treceipt-84\n").unwrap(),
+            "receipt-84"
+        );
         assert!(parse_receipt("accepted\t\n").is_err());
         assert!(parse_receipt("accepted\tbad receipt\n").is_err());
         assert!(parse_receipt("rejected\treceipt-84\n").is_err());
