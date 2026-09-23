@@ -26,9 +26,7 @@ impl ObserverConfig {
 
     pub fn from_arguments(arguments: &[String]) -> Result<Self, String> {
         let (interval, maximum_cycles) = match arguments {
-            [interval_flag, interval] if interval_flag == "--interval-seconds" => {
-                (interval, None)
-            }
+            [interval_flag, interval] if interval_flag == "--interval-seconds" => (interval, None),
             [interval_flag, interval, cycles_flag, cycles]
                 if interval_flag == "--interval-seconds" && cycles_flag == "--max-cycles" =>
             {
@@ -139,9 +137,7 @@ impl ObserverService {
                 format!("observer publish failed during cycle {completed_cycles}: {error}")
             })?;
 
-            if self.config.maximum_cycles == Some(completed_cycles)
-                || runtime.stop_requested()
-            {
+            if self.config.maximum_cycles == Some(completed_cycles) || runtime.stop_requested() {
                 break;
             }
             runtime.wait(self.config.interval);
@@ -246,9 +242,8 @@ mod tests {
 
     #[test]
     fn observer_honors_a_stop_request_before_collecting() {
-        let service = ObserverService::new(
-            ObserverConfig::new(Duration::from_secs(30), None).unwrap(),
-        );
+        let service =
+            ObserverService::new(ObserverConfig::new(Duration::from_secs(30), None).unwrap());
         let mut runtime = RecordingRuntime {
             stop: true,
             waits: Vec::new(),

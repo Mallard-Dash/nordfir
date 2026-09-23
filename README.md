@@ -1,115 +1,15 @@
-# Nordfir Engine v0.5
+# Nordfir
 
-Nordfir is a safety-aware lifecycle and energy control engine for small
-infrastructure. It is being built in Rust and intentionally has no integrated
-AI dependency.
+Nordfir is a safety-aware energy saver for small servers and home labs.
 
-The v0.5 milestone extends the first read-only/dry-run vertical slice with
-Linux power-capability discovery, REST planning and durable original-state
-snapshots:
+The project is being restarted in Python. The first Rust implementation
+(v0.5.13) is preserved in [`archive/rust/`](archive/rust/README.md), together
+with its design documents.
 
-```text
-Linux state -> Snapshot -> Power estimate -> Economize intent
-            -> Safety -> Authority -> REST action -> Dry run
-```
+## Design rules carried over from v0.5
 
-Nordfir modifies host power settings only through explicitly confirmed apply
-and restore commands. All other development commands remain read-only or dry-run.
-
-## Development commands
-
-```bash
-cargo run -- inspect-local
-cargo run -- power-capabilities-local
-cargo run -- plan-rest-local
-cargo run -- save-original-state-local ./nordfir-state
-cargo run -- show-original-state-local ./nordfir-state
-cargo run -- lifecycle-status-local ./nordfir-state
-cargo run -- preflight-rest-local ./nordfir-state --expect-host my-test-node
-cargo run -- deployment-security-local
-cargo run -- observe-service-local --interval-seconds 30 --max-cycles 3
-cargo run -- economize-local
-```
-
-`inspect-local` reads local Linux state and prints a generic power estimate.
-`power-capabilities-local` inspects cpufreq and RAPL interfaces without writing
-to them. `plan-rest-local` creates a typed, non-executable REST change plan.
-`save-original-state-local` records the current governor and configured CPU
-frequency range without overwriting an existing snapshot. `show-original-state-local`
-validates and displays that snapshot.
-`lifecycle-status-local` safely reports whether recovery is armed, how many
-recovery snapshots have been archived and whether the local audit log is ready.
-`preflight-rest-local` requires the expected hostname and combines host identity,
-fresh recovery state, REST planning, cpufreq write readiness, local audit and
-optional forwarding checks. It reports every blocker without changing the host.
-`deployment-security-local` reads the current Linux process status and verifies
-the runtime half of the least-privilege service boundary: a non-root account,
-`NoNewPrivs`, an empty effective capability set and an empty capability bounding
-set. It is expected to fail during an ordinary interactive development run.
-`observe-service-local` is the first long-running service slice. It periodically
-collects the same read-only local snapshot and emits a compact heartbeat suitable
-for stdout or journald. Omit `--max-cycles` to keep it running until the process
-is terminated; the bounded form is intended for deployment tests.
-`economize-local` evaluates an `Economize` intent and records the resulting
-REST action through a non-destructive dry-run driver.
-
-The first writable development command is deliberately harder to invoke:
-
-```bash
-cargo run -- apply-rest-local ./nordfir-state --confirm-system-power-write
-cargo run -- restore-active-local ./nordfir-state --confirm-system-power-write
-```
-
-It requires an existing original-state snapshot, a non-blocked REST plan and
-write access to Linux cpufreq. It verifies every write and attempts rollback if
-a later change fails. `restore-active-local` validates the saved values against
-current hardware capabilities before restoring and verifying them. Run these
-commands only on a host whose power policy you intend to change.
-
-Writable commands require private state-directory and snapshot permissions.
-REST apply additionally requires a snapshot captured within the last 15
-minutes. Every confirmed apply or restore attempt appends a result to
-`<state-directory>/audit.log`.
-
-Audit events can also be forwarded to a separate local collector over a Unix
-datagram socket:
-
-```bash
-export NORDFIR_AUDIT_FORWARD_SOCKET=/run/nordfir-audit/collector.sock
-```
-
-When configured, Nordfir writes every event to both the private local log and
-the collector. An unavailable or invalid collector is surfaced as an error; an
-initial intent must reach both sinks before any power setting is changed. The
-collector owns durable remote transport and storage beyond the host.
-
-For deployments that require positive confirmation from a separate trust
-boundary, Nordfir can instead or additionally require an external receipt:
-
-```bash
-export NORDFIR_AUDIT_RECEIPT_SOCKET=/run/nordfir-audit/receipt.sock
-```
-
-The Unix stream collector must durably accept the newline-delimited event and
-reply with `accepted<TAB><receipt-id><LF>`. Receipt IDs may contain ASCII
-letters, digits, `-`, `_`, `.` and `:`. A missing, timed-out or malformed
-receipt fails the audit operation; the initial intent must be acknowledged
-before Nordfir changes a power setting.
-
-After a verified ACTIVE restore, Nordfir retires the active snapshot into the
-private `<state-directory>/archive/` directory. The archived recovery point is
-preserved, while a new REST cycle can capture a fresh non-overwriting snapshot.
-
-## Documentation
-
-- `docs/ARCHITECTURE.md` — subsystem boundaries and the one-engine model.
-- `docs/ENGINE.md` — core engine concepts.
-- `docs/SECURITY.md` — authority and safety principles.
-- `docs/ENERGY.md` — energy model and measurement strategy.
-- `docs/CODE_WALKTHROUGH.md` — what the current code actually does.
-- `docs/IMPLEMENTATION_STATUS.md` — implemented/deferred functionality.
-
-## Design rule
-
-Nordfir must never receive more authority than required for the selected
-operating mode. Unknown safety-critical state is not treated as safe.
+- Unknown is not safe: missing information blocks an action.
+- Capture the original state before changing anything, and verify every change.
+- Prefer leaving a machine online over making an unsafe power-saving decision.
+- Never run arbitrary shell commands; only typed, known actions.
+- Record what was done and why.

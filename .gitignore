@@ -1,7 +1,16 @@
 /target/
+/archive/rust/target/
 .env
 *.log
-.github
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Local Nordfir runtime state
 /nordfir-state/
